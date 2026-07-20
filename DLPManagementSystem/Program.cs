@@ -70,6 +70,7 @@ builder.Services.AddScoped<IPermissionRequestService, PermissionRequestService>(
 builder.Services.AddScoped<IPermissionGrantService, PermissionGrantService>();
 builder.Services.AddScoped<IFileClassificationService, FileClassificationService>();
 builder.Services.AddScoped<IFileKeyProtectionService, FileKeyProtectionService>();
+builder.Services.AddScoped<IEnrollmentTokenService, EnrollmentTokenService>();
 
 builder.Services.AddDataProtection();
 
@@ -100,7 +101,8 @@ builder.Services
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey)),
             ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromMinutes(1)
+            ClockSkew = TimeSpan.FromMinutes(1),
+            RoleClaimType = "role"
         };
     })
     .AddScheme<AuthenticationSchemeOptions, DeviceBearerAuthenticationHandler>(
