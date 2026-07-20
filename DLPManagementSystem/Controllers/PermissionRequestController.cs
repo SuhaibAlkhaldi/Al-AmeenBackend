@@ -1,0 +1,93 @@
+using DLPManagementSystem.Common;
+using DLPManagementSystem.DTO.Permissions.Contracts;
+using DLPManagementSystem.Service.Interface;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace DLPManagementSystem.Controllers
+{
+    [ApiController]
+    [Route("api/v1/permission-requests")]
+    [Authorize]
+    public class PermissionRequestController : ControllerBase
+    {
+        private readonly IPermissionRequestService _permissionRequestService;
+
+        public PermissionRequestController(IPermissionRequestService permissionRequestService)
+        {
+            _permissionRequestService = permissionRequestService;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetRequests(
+            [FromQuery] int? statusId,
+            [FromQuery] Guid? requestedByEmployeeId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            CancellationToken cancellationToken = default)
+        {
+            var organizationId = User.GetOrganizationId();
+            var response = await _permissionRequestService.GetRequestsAsync(organizationId, statusId, requestedByEmployeeId, page, pageSize, cancellationToken);
+            return Ok(response);
+        }
+
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var response = await _permissionRequestService.GetByIdAsync(organizationId, id, cancellationToken);
+
+            if (!response.Success)
+            {
+                return NotFound(response);
+            }
+
+            return Ok(response);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreatePermissionRequestDto request, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var userId = User.GetUserId();
+            var response = await _permissionRequestService.CreateAsync(organizationId, userId, request, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
+
+        [HttpPost("{id:guid}/approve")]
+        public async Task<IActionResult> Approve(Guid id, [FromBody] ReviewPermissionRequestDto request, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var userId = User.GetUserId();
+            var response = await _permissionRequestService.ApproveAsync(organizationId, id, userId, request, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
+
+        [HttpPost("{id:guid}/reject")]
+        public async Task<IActionResult> Reject(Guid id, [FromBody] ReviewPermissionRequestDto request, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var userId = User.GetUserId();
+            var response = await _permissionRequestService.RejectAsync(organizationId, id, userId, request, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
+    }
+}

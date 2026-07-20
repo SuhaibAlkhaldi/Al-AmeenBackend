@@ -30,6 +30,7 @@ namespace DLPManagementSystem.Data.Seed
 
             await SeedAuditLookupsAsync(cancellationToken);
             await SeedAgentCommandStatusesAsync(cancellationToken);
+            await SeedAlertLookupsAsync(cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
             if (_environment.IsDevelopment())
@@ -458,6 +459,50 @@ namespace DLPManagementSystem.Data.Seed
                     Id = id,
                     Name = name,
                     DisplayName = displayName
+                });
+            }
+        }
+
+        private async Task SeedAlertLookupsAsync(CancellationToken ct)
+        {
+            await AddAlertLevelIfMissing(1, "Low", 0, 39, ct);
+            await AddAlertLevelIfMissing(2, "Medium", 40, 69, ct);
+            await AddAlertLevelIfMissing(3, "High", 70, 89, ct);
+            await AddAlertLevelIfMissing(4, "Critical", 90, 100, ct);
+
+            await AddAlertStatusIfMissing(1, "New", "Newly raised alert.", ct);
+            await AddAlertStatusIfMissing(2, "UnderInvestigation", "Alert is being investigated.", ct);
+            await AddAlertStatusIfMissing(3, "Closed", "Alert has been closed.", ct);
+            await AddAlertStatusIfMissing(4, "Reopened", "Alert was reopened after being closed.", ct);
+        }
+
+        private async Task AddAlertLevelIfMissing(int id, string name, int minRiskScore, int maxRiskScore, CancellationToken ct)
+        {
+            var exists = await _db.AlertLevels.AnyAsync(x => x.Name == name, ct);
+
+            if (!exists)
+            {
+                _db.AlertLevels.Add(new AlertLevel
+                {
+                    Id = id,
+                    Name = name,
+                    MinRiskScore = minRiskScore,
+                    MaxRiskScore = maxRiskScore
+                });
+            }
+        }
+
+        private async Task AddAlertStatusIfMissing(int id, string name, string description, CancellationToken ct)
+        {
+            var exists = await _db.AlertStatuses.AnyAsync(x => x.Name == name, ct);
+
+            if (!exists)
+            {
+                _db.AlertStatuses.Add(new AlertStatus
+                {
+                    Id = id,
+                    Name = name,
+                    Description = description
                 });
             }
         }

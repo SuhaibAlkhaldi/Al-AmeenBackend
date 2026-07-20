@@ -1,9 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace DLPManagementSystem.CompanyDlpDashboard;
 
 [ApiController]
 [Route("api/v1/dashboard")]
+[Authorize]
 public sealed class DlpDashboardController : ControllerBase
 {
     private readonly IDlpDashboardQueryService _dashboardQueryService;
