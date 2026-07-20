@@ -40,14 +40,14 @@ namespace DLPManagementSystem.Data.Seed
 
         private async Task SeedRolesAsync(CancellationToken ct)
         {
-            await AddRoleIfMissing("SuperAdmin", "Super Admin", ct);
-            await AddRoleIfMissing("SecurityAdmin", "Security Admin", ct);
-            await AddRoleIfMissing("HelpDesk", "Help Desk", ct);
-            await AddRoleIfMissing("Auditor", "Auditor", ct);
-            await AddRoleIfMissing("Employee", "Employee", ct);
+            await AddRoleIfMissing(1, "SuperAdmin", "Super Admin", ct);
+            await AddRoleIfMissing(2, "SecurityAdmin", "Security Admin", ct);
+            await AddRoleIfMissing(3, "HelpDesk", "Help Desk", ct);
+            await AddRoleIfMissing(4, "Auditor", "Auditor", ct);
+            await AddRoleIfMissing(5, "Employee", "Employee", ct);
         }
 
-        private async Task AddRoleIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddRoleIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.Roles.AnyAsync(x => x.Name == name, ct);
 
@@ -55,6 +55,7 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.Roles.Add(new Role
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName,
                     IsActive = true
@@ -64,11 +65,11 @@ namespace DLPManagementSystem.Data.Seed
 
         private async Task SeedUserTypesAsync(CancellationToken ct)
         {
-            await AddUserTypeIfMissing("Admin", "Admin", ct);
-            await AddUserTypeIfMissing("Employee", "Employee", ct);
+            await AddUserTypeIfMissing(1, "Admin", "Admin", ct);
+            await AddUserTypeIfMissing(2, "Employee", "Employee", ct);
         }
 
-        private async Task AddUserTypeIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddUserTypeIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.UserTypes.AnyAsync(x => x.Name == name, ct);
 
@@ -76,6 +77,7 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.UserTypes.Add(new UserType
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
@@ -84,12 +86,12 @@ namespace DLPManagementSystem.Data.Seed
 
         private async Task SeedUserStatusesAsync(CancellationToken ct)
         {
-            await AddUserStatusIfMissing("Active", "Active", ct);
-            await AddUserStatusIfMissing("Disabled", "Disabled", ct);
-            await AddUserStatusIfMissing("Locked", "Locked", ct);
+            await AddUserStatusIfMissing(1, "Active", "Active", ct);
+            await AddUserStatusIfMissing(2, "Disabled", "Disabled", ct);
+            await AddUserStatusIfMissing(3, "Locked", "Locked", ct);
         }
 
-        private async Task AddUserStatusIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddUserStatusIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.UserStatuses.AnyAsync(x => x.Name == name, ct);
 
@@ -97,6 +99,7 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.UserStatuses.Add(new UserStatus
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
@@ -105,12 +108,12 @@ namespace DLPManagementSystem.Data.Seed
 
         private async Task SeedEmployeeStatusesAsync(CancellationToken ct)
         {
-            await AddEmployeeStatusIfMissing("Active", "Active", ct);
-            await AddEmployeeStatusIfMissing("Suspended", "Suspended", ct);
-            await AddEmployeeStatusIfMissing("Terminated", "Terminated", ct);
+            await AddEmployeeStatusIfMissing(1, "Active", "Active", ct);
+            await AddEmployeeStatusIfMissing(2, "Suspended", "Suspended", ct);
+            await AddEmployeeStatusIfMissing(3, "Terminated", "Terminated", ct);
         }
 
-        private async Task AddEmployeeStatusIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddEmployeeStatusIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.EmployeeStatuses.AnyAsync(x => x.Name == name, ct);
 
@@ -118,6 +121,7 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.EmployeeStatuses.Add(new EmployeeStatus
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
@@ -126,14 +130,14 @@ namespace DLPManagementSystem.Data.Seed
 
         private async Task SeedDeviceStatusesAsync(CancellationToken ct)
         {
-            await AddDeviceStatusIfMissing("PendingEnrollment", "Pending Enrollment", ct);
-            await AddDeviceStatusIfMissing("Active", "Active", ct);
-            await AddDeviceStatusIfMissing("Disabled", "Disabled", ct);
-            await AddDeviceStatusIfMissing("Lost", "Lost", ct);
-            await AddDeviceStatusIfMissing("Retired", "Retired", ct);
+            await AddDeviceStatusIfMissing(1, "PendingEnrollment", "Pending Enrollment", ct);
+            await AddDeviceStatusIfMissing(2, "Active", "Active", ct);
+            await AddDeviceStatusIfMissing(3, "Disabled", "Disabled", ct);
+            await AddDeviceStatusIfMissing(4, "Lost", "Lost", ct);
+            await AddDeviceStatusIfMissing(5, "Retired", "Retired", ct);
         }
 
-        private async Task AddDeviceStatusIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddDeviceStatusIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.DeviceStatuses.AnyAsync(x => x.Name == name, ct);
 
@@ -141,6 +145,7 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.DeviceStatuses.Add(new DeviceStatus
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
@@ -149,28 +154,28 @@ namespace DLPManagementSystem.Data.Seed
 
         private async Task SeedPermissionLookupsAsync(CancellationToken ct)
         {
-            await AddPermissionDecisionIfMissing("Allow", "Allow", ct);
-            await AddPermissionDecisionIfMissing("Deny", "Deny", ct);
+            await AddPermissionDecisionIfMissing(1, "Allow", "Allow", ct);
+            await AddPermissionDecisionIfMissing(2, "Deny", "Deny", ct);
 
-            await AddPermissionGrantTypeIfMissing("Permanent", "Permanent", ct);
-            await AddPermissionGrantTypeIfMissing("Temporary", "Temporary", ct);
+            await AddPermissionGrantTypeIfMissing(1, "Permanent", "Permanent", ct);
+            await AddPermissionGrantTypeIfMissing(2, "Temporary", "Temporary", ct);
 
-            await AddPermissionSubjectTypeIfMissing("Organization", "Organization", ct);
-            await AddPermissionSubjectTypeIfMissing("Department", "Department", ct);
-            await AddPermissionSubjectTypeIfMissing("Employee", "Employee", ct);
-            await AddPermissionSubjectTypeIfMissing("UserSid", "User SID", ct);
-            await AddPermissionSubjectTypeIfMissing("Device", "Device", ct);
-            await AddPermissionSubjectTypeIfMissing("DeviceGroup", "Device Group", ct);
+            await AddPermissionSubjectTypeIfMissing(1, "Organization", "Organization", ct);
+            await AddPermissionSubjectTypeIfMissing(2, "Department", "Department", ct);
+            await AddPermissionSubjectTypeIfMissing(3, "Employee", "Employee", ct);
+            await AddPermissionSubjectTypeIfMissing(4, "UserSid", "User SID", ct);
+            await AddPermissionSubjectTypeIfMissing(5, "Device", "Device", ct);
+            await AddPermissionSubjectTypeIfMissing(6, "DeviceGroup", "Device Group", ct);
 
-            await AddPermissionActionCategoryIfMissing("Browser", "Browser", ct);
-            await AddPermissionActionCategoryIfMissing("Clipboard", "Clipboard", ct);
-            await AddPermissionActionCategoryIfMissing("Screen", "Screen", ct);
-            await AddPermissionActionCategoryIfMissing("Usb", "USB", ct);
-            await AddPermissionActionCategoryIfMissing("File", "File", ct);
-            await AddPermissionActionCategoryIfMissing("Software", "Software", ct);
+            await AddPermissionActionCategoryIfMissing(1, "Browser", "Browser", ct);
+            await AddPermissionActionCategoryIfMissing(2, "Clipboard", "Clipboard", ct);
+            await AddPermissionActionCategoryIfMissing(3, "Screen", "Screen", ct);
+            await AddPermissionActionCategoryIfMissing(4, "Usb", "USB", ct);
+            await AddPermissionActionCategoryIfMissing(5, "File", "File", ct);
+            await AddPermissionActionCategoryIfMissing(6, "Software", "Software", ct);
         }
 
-        private async Task AddPermissionDecisionIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddPermissionDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.PermissionDecisions.AnyAsync(x => x.Name == name, ct);
 
@@ -178,13 +183,14 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.PermissionDecisions.Add(new PermissionDecision
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
             }
         }
 
-        private async Task AddPermissionGrantTypeIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddPermissionGrantTypeIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.PermissionGrantTypes.AnyAsync(x => x.Name == name, ct);
 
@@ -192,13 +198,14 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.PermissionGrantTypes.Add(new PermissionGrantType
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
             }
         }
 
-        private async Task AddPermissionSubjectTypeIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddPermissionSubjectTypeIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.PermissionSubjectTypes.AnyAsync(x => x.Name == name, ct);
 
@@ -206,13 +213,14 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.PermissionSubjectTypes.Add(new PermissionSubjectType
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
             }
         }
 
-        private async Task AddPermissionActionCategoryIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddPermissionActionCategoryIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.PermissionActionCategories.AnyAsync(x => x.Name == name, ct);
 
@@ -220,6 +228,7 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.PermissionActionCategories.Add(new PermissionActionCategory
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
@@ -290,22 +299,22 @@ namespace DLPManagementSystem.Data.Seed
 
         private async Task SeedPermissionRequestLookupsAsync(CancellationToken ct)
         {
-            await AddPermissionRequestStatusIfMissing("Draft", "Draft", ct);
-            await AddPermissionRequestStatusIfMissing("Submitted", "Submitted", ct);
-            await AddPermissionRequestStatusIfMissing("UnderReview", "Under Review", ct);
-            await AddPermissionRequestStatusIfMissing("Approved", "Approved", ct);
-            await AddPermissionRequestStatusIfMissing("Rejected", "Rejected", ct);
-            await AddPermissionRequestStatusIfMissing("Cancelled", "Cancelled", ct);
-            await AddPermissionRequestStatusIfMissing("Expired", "Expired", ct);
-            await AddPermissionRequestStatusIfMissing("Fulfilled", "Fulfilled", ct);
+            await AddPermissionRequestStatusIfMissing(1, "Draft", "Draft", ct);
+            await AddPermissionRequestStatusIfMissing(2, "Submitted", "Submitted", ct);
+            await AddPermissionRequestStatusIfMissing(3, "UnderReview", "Under Review", ct);
+            await AddPermissionRequestStatusIfMissing(4, "Approved", "Approved", ct);
+            await AddPermissionRequestStatusIfMissing(5, "Rejected", "Rejected", ct);
+            await AddPermissionRequestStatusIfMissing(6, "Cancelled", "Cancelled", ct);
+            await AddPermissionRequestStatusIfMissing(7, "Expired", "Expired", ct);
+            await AddPermissionRequestStatusIfMissing(8, "Fulfilled", "Fulfilled", ct);
 
-            await AddPermissionRequestReviewDecisionIfMissing("Approved", "Approved", ct);
-            await AddPermissionRequestReviewDecisionIfMissing("Rejected", "Rejected", ct);
-            await AddPermissionRequestReviewDecisionIfMissing("NeedsMoreInfo", "Needs More Info", ct);
-            await AddPermissionRequestReviewDecisionIfMissing("ApprovedPartial", "Approved Partial", ct);
+            await AddPermissionRequestReviewDecisionIfMissing(1, "Approved", "Approved", ct);
+            await AddPermissionRequestReviewDecisionIfMissing(2, "Rejected", "Rejected", ct);
+            await AddPermissionRequestReviewDecisionIfMissing(3, "NeedsMoreInfo", "Needs More Info", ct);
+            await AddPermissionRequestReviewDecisionIfMissing(4, "ApprovedPartial", "Approved Partial", ct);
         }
 
-        private async Task AddPermissionRequestStatusIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddPermissionRequestStatusIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.PermissionRequestStatuses.AnyAsync(x => x.Name == name, ct);
 
@@ -313,13 +322,14 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.PermissionRequestStatuses.Add(new PermissionRequestStatus
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
             }
         }
 
-        private async Task AddPermissionRequestReviewDecisionIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddPermissionRequestReviewDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.PermissionRequestReviewDecisions.AnyAsync(x => x.Name == name, ct);
 
@@ -327,6 +337,7 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.PermissionRequestReviewDecisions.Add(new PermissionRequestReviewDecision
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
@@ -335,44 +346,44 @@ namespace DLPManagementSystem.Data.Seed
 
         private async Task SeedAuditLookupsAsync(CancellationToken ct)
         {
-            await AddAuditDecisionIfMissing("Block", "Block", ct);
-            await AddAuditDecisionIfMissing("Allow", "Allow", ct);
-            await AddAuditDecisionIfMissing("AuditOnly", "Audit Only", ct);
+            await AddAuditDecisionIfMissing(1, "Block", "Block", ct);
+            await AddAuditDecisionIfMissing(2, "Allow", "Allow", ct);
+            await AddAuditDecisionIfMissing(3, "AuditOnly", "Audit Only", ct);
 
-            await AddAuditEventTypeIfMissing("PermissionEvaluated", "Permission Evaluated", ct);
-            await AddAuditEventTypeIfMissing("ActionBlocked", "Action Blocked", ct);
-            await AddAuditEventTypeIfMissing("ActionAllowed", "Action Allowed", ct);
-            await AddAuditEventTypeIfMissing("PolicyFetched", "Policy Fetched", ct);
-            await AddAuditEventTypeIfMissing("AgentError", "Agent Error", ct);
-            await AddAuditEventTypeIfMissing("UsbDeviceBlocked", "USB Device Blocked", ct);
-            await AddAuditEventTypeIfMissing("UsbDeviceAllowed", "USB Device Allowed", ct);
-            await AddAuditEventTypeIfMissing("SoftwareBlocked", "Software Blocked", ct);
-            await AddAuditEventTypeIfMissing("FileEncrypted", "File Encrypted", ct);
-            await AddAuditEventTypeIfMissing("FileDecrypted", "File Decrypted", ct);
+            await AddAuditEventTypeIfMissing(1, "PermissionEvaluated", "Permission Evaluated", ct);
+            await AddAuditEventTypeIfMissing(2, "ActionBlocked", "Action Blocked", ct);
+            await AddAuditEventTypeIfMissing(3, "ActionAllowed", "Action Allowed", ct);
+            await AddAuditEventTypeIfMissing(4, "PolicyFetched", "Policy Fetched", ct);
+            await AddAuditEventTypeIfMissing(5, "AgentError", "Agent Error", ct);
+            await AddAuditEventTypeIfMissing(6, "UsbDeviceBlocked", "USB Device Blocked", ct);
+            await AddAuditEventTypeIfMissing(7, "UsbDeviceAllowed", "USB Device Allowed", ct);
+            await AddAuditEventTypeIfMissing(8, "SoftwareBlocked", "Software Blocked", ct);
+            await AddAuditEventTypeIfMissing(9, "FileEncrypted", "File Encrypted", ct);
+            await AddAuditEventTypeIfMissing(10, "FileDecrypted", "File Decrypted", ct);
 
-            await AddAuditReasonCodeIfMissing("DefaultAllow", "Default Allow", "Action was allowed by default policy.", ct);
-            await AddAuditReasonCodeIfMissing("GlobalDefaultDeny", "Global Default Deny", "Action was blocked by default deny policy.", ct);
-            await AddAuditReasonCodeIfMissing("PermanentPermissionActive", "Permanent Permission Active", "Action was allowed by active permanent grant.", ct);
-            await AddAuditReasonCodeIfMissing("TemporaryPermissionActive", "Temporary Permission Active", "Action was allowed by active temporary grant.", ct);
-            await AddAuditReasonCodeIfMissing("TemporaryPermissionExpired", "Temporary Permission Expired", "Temporary permission was expired.", ct);
-            await AddAuditReasonCodeIfMissing("PermissionRevoked", "Permission Revoked", "Permission was revoked.", ct);
-            await AddAuditReasonCodeIfMissing("UserSpecificGrant", "User Specific Grant", "Decision came from user-specific grant.", ct);
-            await AddAuditReasonCodeIfMissing("DeviceSpecificGrant", "Device Specific Grant", "Decision came from device-specific grant.", ct);
-            await AddAuditReasonCodeIfMissing("OrganizationPolicy", "Organization Policy", "Decision came from organization policy.", ct);
-            await AddAuditReasonCodeIfMissing("UsbDeviceNotApproved", "USB Device Not Approved", "USB device was not approved.", ct);
-            await AddAuditReasonCodeIfMissing("UsbStorageBlocked", "USB Storage Blocked", "USB storage device was blocked.", ct);
-            await AddAuditReasonCodeIfMissing("UsbMobileDeviceBlocked", "USB Mobile Device Blocked", "USB mobile/MTP device was blocked.", ct);
-            await AddAuditReasonCodeIfMissing("SoftwareInstallerBlocked", "Software Installer Blocked", "Software installer was blocked.", ct);
-            await AddAuditReasonCodeIfMissing("UnapprovedSoftwareBlocked", "Unapproved Software Blocked", "Unapproved software execution was blocked.", ct);
-            await AddAuditReasonCodeIfMissing("SensitiveClipboardBlocked", "Sensitive Clipboard Blocked", "Sensitive clipboard copy was blocked.", ct);
-            await AddAuditReasonCodeIfMissing("BrowserActionBlocked", "Browser Action Blocked", "Browser action was blocked.", ct);
-            await AddAuditReasonCodeIfMissing("FileEncryptionDenied", "File Encryption Denied", "File encryption was denied.", ct);
-            await AddAuditReasonCodeIfMissing("FileDecryptionDenied", "File Decryption Denied", "File decryption was denied.", ct);
-            await AddAuditReasonCodeIfMissing("ValidSignedPolicy", "Valid Signed Policy", "The agent applied a valid signed policy.", ct);
-            await AddAuditReasonCodeIfMissing("PermissionGrantMatched","Permission Grant Matched","A matching permission grant was found for the action.",ct);
+            await AddAuditReasonCodeIfMissing(1, "DefaultAllow", "Default Allow", "Action was allowed by default policy.", ct);
+            await AddAuditReasonCodeIfMissing(2, "GlobalDefaultDeny", "Global Default Deny", "Action was blocked by default deny policy.", ct);
+            await AddAuditReasonCodeIfMissing(3, "PermanentPermissionActive", "Permanent Permission Active", "Action was allowed by active permanent grant.", ct);
+            await AddAuditReasonCodeIfMissing(4, "TemporaryPermissionActive", "Temporary Permission Active", "Action was allowed by active temporary grant.", ct);
+            await AddAuditReasonCodeIfMissing(5, "TemporaryPermissionExpired", "Temporary Permission Expired", "Temporary permission was expired.", ct);
+            await AddAuditReasonCodeIfMissing(6, "PermissionRevoked", "Permission Revoked", "Permission was revoked.", ct);
+            await AddAuditReasonCodeIfMissing(7, "UserSpecificGrant", "User Specific Grant", "Decision came from user-specific grant.", ct);
+            await AddAuditReasonCodeIfMissing(8, "DeviceSpecificGrant", "Device Specific Grant", "Decision came from device-specific grant.", ct);
+            await AddAuditReasonCodeIfMissing(9, "OrganizationPolicy", "Organization Policy", "Decision came from organization policy.", ct);
+            await AddAuditReasonCodeIfMissing(10, "UsbDeviceNotApproved", "USB Device Not Approved", "USB device was not approved.", ct);
+            await AddAuditReasonCodeIfMissing(11, "UsbStorageBlocked", "USB Storage Blocked", "USB storage device was blocked.", ct);
+            await AddAuditReasonCodeIfMissing(12, "UsbMobileDeviceBlocked", "USB Mobile Device Blocked", "USB mobile/MTP device was blocked.", ct);
+            await AddAuditReasonCodeIfMissing(13, "SoftwareInstallerBlocked", "Software Installer Blocked", "Software installer was blocked.", ct);
+            await AddAuditReasonCodeIfMissing(14, "UnapprovedSoftwareBlocked", "Unapproved Software Blocked", "Unapproved software execution was blocked.", ct);
+            await AddAuditReasonCodeIfMissing(15, "SensitiveClipboardBlocked", "Sensitive Clipboard Blocked", "Sensitive clipboard copy was blocked.", ct);
+            await AddAuditReasonCodeIfMissing(16, "BrowserActionBlocked", "Browser Action Blocked", "Browser action was blocked.", ct);
+            await AddAuditReasonCodeIfMissing(17, "FileEncryptionDenied", "File Encryption Denied", "File encryption was denied.", ct);
+            await AddAuditReasonCodeIfMissing(18, "FileDecryptionDenied", "File Decryption Denied", "File decryption was denied.", ct);
+            await AddAuditReasonCodeIfMissing(19, "ValidSignedPolicy", "Valid Signed Policy", "The agent applied a valid signed policy.", ct);
+            await AddAuditReasonCodeIfMissing(20, "PermissionGrantMatched","Permission Grant Matched","A matching permission grant was found for the action.",ct);
         }
 
-        private async Task AddAuditDecisionIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddAuditDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.AuditDecisions.AnyAsync(x => x.Name == name, ct);
 
@@ -380,13 +391,14 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.AuditDecisions.Add(new AuditDecision
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
             }
         }
 
-        private async Task AddAuditEventTypeIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddAuditEventTypeIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.AuditEventTypes.AnyAsync(x => x.Name == name, ct);
 
@@ -394,6 +406,7 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.AuditEventTypes.Add(new AuditEventType
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });
@@ -401,6 +414,7 @@ namespace DLPManagementSystem.Data.Seed
         }
 
         private async Task AddAuditReasonCodeIfMissing(
+    int id,
     string code,
     string displayName,
     string description,
@@ -414,13 +428,9 @@ namespace DLPManagementSystem.Data.Seed
                 return;
             }
 
-            var nextId = await _db.AuditReasonCodes
-                .Select(x => (int?)x.Id)
-                .MaxAsync(ct) ?? 0;
-
             _db.AuditReasonCodes.Add(new AuditReasonCode
             {
-                Id = nextId + 1,
+                Id = id,
                 Code = code,
                 DisplayName = displayName,
                 Description = description
@@ -429,15 +439,15 @@ namespace DLPManagementSystem.Data.Seed
 
         private async Task SeedAgentCommandStatusesAsync(CancellationToken ct)
         {
-            await AddAgentCommandStatusIfMissing("Pending", "Pending", ct);
-            await AddAgentCommandStatusIfMissing("Sent", "Sent", ct);
-            await AddAgentCommandStatusIfMissing("Completed", "Completed", ct);
-            await AddAgentCommandStatusIfMissing("Failed", "Failed", ct);
-            await AddAgentCommandStatusIfMissing("Cancelled", "Cancelled", ct);
-            await AddAgentCommandStatusIfMissing("Expired", "Expired", ct);
+            await AddAgentCommandStatusIfMissing(1, "Pending", "Pending", ct);
+            await AddAgentCommandStatusIfMissing(2, "Sent", "Sent", ct);
+            await AddAgentCommandStatusIfMissing(3, "Completed", "Completed", ct);
+            await AddAgentCommandStatusIfMissing(4, "Failed", "Failed", ct);
+            await AddAgentCommandStatusIfMissing(5, "Cancelled", "Cancelled", ct);
+            await AddAgentCommandStatusIfMissing(6, "Expired", "Expired", ct);
         }
 
-        private async Task AddAgentCommandStatusIfMissing(string name, string displayName, CancellationToken ct)
+        private async Task AddAgentCommandStatusIfMissing(int id, string name, string displayName, CancellationToken ct)
         {
             var exists = await _db.AgentCommandStatuses.AnyAsync(x => x.Name == name, ct);
 
@@ -445,6 +455,7 @@ namespace DLPManagementSystem.Data.Seed
             {
                 _db.AgentCommandStatuses.Add(new AgentCommandStatus
                 {
+                    Id = id,
                     Name = name,
                     DisplayName = displayName
                 });

@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DLPManagementSystem.Migrations
 {
     [DbContext(typeof(DLPSystemContext))]
-    [Migration("20260720071153_AddTargetDeviceToPermissionGrants")]
-    partial class AddTargetDeviceToPermissionGrants
+    [Migration("20260720100140_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -1513,9 +1513,6 @@ namespace DLPManagementSystem.Migrations
                     b.Property<int>("DecisionId")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("DeviceId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<DateTimeOffset?>("ExpiresAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1570,8 +1567,6 @@ namespace DLPManagementSystem.Migrations
                     b.HasIndex("ActionKey");
 
                     b.HasIndex("DecisionId");
-
-                    b.HasIndex("DeviceId");
 
                     b.HasIndex("GrantTypeId");
 
@@ -3007,10 +3002,6 @@ namespace DLPManagementSystem.Migrations
                         .IsRequired()
                         .HasConstraintName("FK_PermissionGrants_Decision");
 
-                    b.HasOne("DLPManagementSystem.Models.Device", null)
-                        .WithMany("PermissionGrants")
-                        .HasForeignKey("DeviceId");
-
                     b.HasOne("DLPManagementSystem.Models.PermissionGrantType", "GrantType")
                         .WithMany("PermissionGrants")
                         .HasForeignKey("GrantTypeId")
@@ -3046,9 +3037,10 @@ namespace DLPManagementSystem.Migrations
                         .HasConstraintName("FK_PermissionGrants_SubjectType");
 
                     b.HasOne("DLPManagementSystem.Models.Device", "TargetDevice")
-                        .WithMany()
+                        .WithMany("PermissionGrants")
                         .HasForeignKey("TargetDeviceId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_PermissionGrants_TargetDevice");
 
                     b.Navigation("ActionKeyNavigation");
 
