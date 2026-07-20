@@ -55,23 +55,6 @@ namespace DLPManagementSystem.Service.Service
                     "لا يوجد تحديث جديد للسياسة");
             }
 
-            var policyState = await _db.DevicePolicyStates
-                .FirstOrDefaultAsync(x => x.DeviceId == device.Id, cancellationToken);
-
-            if (policyState == null)
-            {
-                policyState = new DevicePolicyState
-                {
-                    DeviceId = device.Id,
-                    OrganizationId = device.OrganizationId
-                };
-
-                _db.DevicePolicyStates.Add(policyState);
-            }
-
-            policyState.LastFetchedPolicyVersion = latestPolicyVersion.VersionNumber;
-            policyState.LastFetchedAtUtc = nowUtc;
-
             var snapshot = BuildPolicySnapshot(
                  latestPolicyVersion.Id,
                  latestPolicyVersion.VersionNumber,
@@ -79,7 +62,16 @@ namespace DLPManagementSystem.Service.Service
                  deviceId,
                  nowUtc);
 
-            await _db.SaveChangesAsync(cancellationToken);
+            await DevicePolicyStateUpsert.ApplyAsync(
+                _db,
+                device.Id,
+                device.OrganizationId,
+                policyState =>
+                {
+                    policyState.LastFetchedPolicyVersion = latestPolicyVersion.VersionNumber;
+                    policyState.LastFetchedAtUtc = nowUtc;
+                },
+                cancellationToken);
 
             return ApiResponse<AgentPolicyResultDto>.SuccessResponse(
                 new AgentPolicyResultDto

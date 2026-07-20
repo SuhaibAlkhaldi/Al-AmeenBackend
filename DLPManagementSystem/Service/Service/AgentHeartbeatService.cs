@@ -54,24 +54,16 @@ namespace DLPManagementSystem.Service.Service
 
             device.CurrentPolicyVersion = request.LastAppliedPolicyVersion;
 
-            var policyState = await _db.DevicePolicyStates
-                .FirstOrDefaultAsync(x => x.DeviceId == device.Id, cancellationToken);
-
-            if (policyState == null)
-            {
-                policyState = new DevicePolicyState
+            await DevicePolicyStateUpsert.ApplyAsync(
+                _db,
+                device.Id,
+                device.OrganizationId,
+                policyState =>
                 {
-                    DeviceId = device.Id,
-                    OrganizationId = device.OrganizationId
-                };
-
-                _db.DevicePolicyStates.Add(policyState);
-            }
-
-            policyState.LastAppliedPolicyVersion = request.LastAppliedPolicyVersion;
-            policyState.LastAppliedAtUtc = nowUtc;
-
-            await _db.SaveChangesAsync(cancellationToken);
+                    policyState.LastAppliedPolicyVersion = request.LastAppliedPolicyVersion;
+                    policyState.LastAppliedAtUtc = nowUtc;
+                },
+                cancellationToken);
 
             var result = new AgentHeartbeatResultDto
             {
