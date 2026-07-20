@@ -121,6 +121,26 @@ namespace DLPManagementSystem.Service.Service
                             .ToListAsync(cancellationToken))
                         .ToHashSet();
 
+                // Every Block decision raises an alert (see below). Resolve the "New" status and the
+                // "High" level by name once, the same way the other lookup maps above are resolved,
+                // so this doesn't depend on seeded ids staying stable.
+                var newAlertStatusId = await _db.AlertStatuses
+                    .AsNoTracking()
+                    .Where(x => x.Name == "New")
+                    .Select(x => (int?)x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                // TODO: derive AlertLevel from a real risk score once risk scoring exists. For now every
+                // Block decision is treated as "High" since the agent only sends a Decision enum, not a
+                // score. AuditOnly decisions could reasonably generate lower-severity alerts later.
+                var highAlertLevelId = await _db.AlertLevels
+                    .AsNoTracking()
+                    .Where(x => x.Name == "High")
+                    .Select(x => (int?)x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                var canCreateAlerts = newAlertStatusId.HasValue && highAlertLevelId.HasValue;
+
                 var nowUtc = DateTimeOffset.UtcNow;
                 var seenInBatch = new HashSet<Guid>();
 
@@ -230,6 +250,23 @@ namespace DLPManagementSystem.Service.Service
                     };
 
                     _db.AuditEvents.Add(auditEvent);
+
+                    // Only Block decisions raise an alert for now — that's the only decision this
+                    // system can currently justify surfacing to an admin. Allow/AuditOnly/Error don't.
+                    if (mappedDecisionName == "Block" && canCreateAlerts)
+                    {
+                        _db.Alerts.Add(new Alert
+                        {
+                            OrganizationId = organizationId,
+                            AuditEventId = auditEvent.Id,
+                            AlertLevelId = highAlertLevelId!.Value,
+                            AlertStatusId = newAlertStatusId!.Value,
+                            Title = $"Blocked: {envelope.ActionKey}",
+                            Description = string.IsNullOrWhiteSpace(envelope.ReasonCode) ? null : $"Reason: {envelope.ReasonCode}",
+                            CreatedAtUtc = nowUtc
+                        });
+                    }
+
                     result.AcceptedEventIds.Add(envelope.EventId);
                 }
 
