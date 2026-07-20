@@ -1,0 +1,48 @@
+﻿namespace DLPManagementSystem.CompanyDlpDashboard;
+
+public sealed record DlpDashboardSummaryDto(
+    DateTimeOffset GeneratedAtUtc,
+    DateTimeOffset FromUtc,
+    DateTimeOffset ToUtc,
+    long? PolicyVersion,
+    DlpDashboardTotalsDto Totals,
+    IReadOnlyList<DlpActionBreakdownItemDto> ActionBreakdown,
+    IReadOnlyList<DlpReasonBreakdownItemDto> ReasonBreakdown,
+    IReadOnlyList<DlpRecentAuditEventDto> RecentEvents);
+
+public sealed record DlpDashboardTotalsDto(
+    long TotalEvents,
+    long AllowedEvents,
+    long BlockedEvents,
+    long AuditOnlyEvents,
+    long ErrorEvents,
+    int UniqueActions,
+   downItemDto> ActionBreakdown,
+    IReadOnlyList<DlpReasonBreakdownItemDto> ReasonBreakdown,
+    IReadOnlyList<DlpRecentAuditEventDto> RecentEvents);
+
+public sealed DateTimeOffset? LastReceivedAtUtc);
+
+public sealed record DlpActionBreakdownItemDto(
+    string ActionKey,
+    long Total,
+    long Allowed,
+    long Blocked,
+    long Errors,
+    DateTimeOffset? LastReceivedAtUtc);
+
+public sealed record DlpReasonBreakdownItemDto(
+    string ReasonCode,
+    long Total);
+
+public sealed record DlpRecentAuditEventDto(
+    string ActionKey,
+    string? EventType,
+    string? Username,
+    string? UserSid,
+    string? DeviceId,
+    string? Decision,
+    string? ReasonCode,
+    long? PolicyVersion,
+    DateTimeOffset OccurredAtUtc,
+    DateTimeOffset ReceivedAtUtc);

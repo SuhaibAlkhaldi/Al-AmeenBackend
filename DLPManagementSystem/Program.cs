@@ -1,0 +1,123 @@
+using DLPManagementSystem.Data.Seed;
+using DLPManagementSystem.Helper.Health;
+using DLPManagementSystem.Models;
+using DLPManagementSystem.Service.Interface;
+using DLPManagementSystem.Service.Service;
+using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using DLPManagementSystem.CompanyDlpDashboard;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+
+builder.Services.AddControllers();
+// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+builder.Services.AddScoped<IDatabaseSeeder, DatabaseSeeder>();
+builder.Services.AddScoped<IAgentAuditEventService, AgentAuditEventService>();
+builder.Services.AddScoped<IAgentEnrollmentService, AgentEnrollmentService>();
+builder.Services.AddScoped<IAgentHeartbeatService, AgentHeartbeatService>();
+builder.Services.AddScoped<IAgentPolicyService, AgentPolicyService>();
+
+builder.Services.AddMemoryCache();
+
+builder.Services.AddScoped<IPermissionLookupService, PermissionLookupService>();
+
+builder.Services.AddDbContext<DLPSystemContext>(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+});
+
+builder.Services.Configure<DlpDashboardOptions>(
+    builder.Configuration.GetSection("DlpDashboard"));
+
+builder.Services.AddScoped<IDlpDashboardQueryService, SqlDlpDashboardQueryService>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("DlpDashboardDevCors", policy =>
+    {
+        policy
+            .WithOrigins("http://localhost:4200")
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
+
+
+
+builder.Services
+    .AddHealthChecks()
+    .AddCheck(
+        name: "self",
+        check: () => HealthCheckResult.Healthy("API process is running."),
+        tags: new[] { "live" })
+    .AddCheck<DatabaseHealthCheck>(
+        name: "database",
+        tags: new[] { "ready" });
+
+var app = builder.Build();
+
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+
+static async Task WriteHealthResponseAsync(HttpContext context, HealthReport report)
+{
+    context.Response.ContentType = "application/json";
+
+    var response = new
+    {
+        status = report.Status.ToString(),
+        totalDuration = report.TotalDuration.ToString(),
+        checks = report.Entries.Select(entry => new
+        {
+            name = entry.Key,
+            status = entry.Value.Status.ToString(),
+            description = entry.Value.Description,
+            duration = entry.Value.Duration.ToString()
+        })
+    };
+
+    await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+}
+
+app.UseCors("DlpDashboardDevCors");
+
+app.UseHttpsRedirection();
+
+app.UseAuthorization();
+
+app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<IDatabaseSeeder>();
+    await seeder.Seed();
+}
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live"),
+    ResponseWriter = WriteHealthResponseAsync
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = WriteHealthResponseAsync
+});
+
+
+app.Run();
