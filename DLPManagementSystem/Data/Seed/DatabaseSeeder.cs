@@ -174,6 +174,7 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionCategoryIfMissing(4, "Usb", "USB", ct);
             await AddPermissionActionCategoryIfMissing(5, "File", "File", ct);
             await AddPermissionActionCategoryIfMissing(6, "Software", "Software", ct);
+            await AddPermissionActionCategoryIfMissing(7, "System", "System", ct);
         }
 
         private async Task AddPermissionDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
@@ -260,6 +261,8 @@ namespace DLPManagementSystem.Data.Seed
 
             await AddPermissionActionIfMissing("software.install", "Software", "Software Install", "Block or allow software installation.", "Deny", 140, ct);
             await AddPermissionActionIfMissing("software.execute-unapproved", "Software", "Execute Unapproved Software", "Block or allow unapproved software execution.", "Deny", 150, ct);
+
+            await AddPermissionActionIfMissing("agent.session", "System", "Agent Session", "Housekeeping events emitted by the agent's own session lifecycle.", "Allow", 160, ct);
         }
 
         private async Task AddPermissionActionIfMissing(
@@ -350,6 +353,7 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditDecisionIfMissing(1, "Block", "Block", ct);
             await AddAuditDecisionIfMissing(2, "Allow", "Allow", ct);
             await AddAuditDecisionIfMissing(3, "AuditOnly", "Audit Only", ct);
+            await AddAuditDecisionIfMissing(4, "Error", "Error", ct);
 
             await AddAuditEventTypeIfMissing(1, "PermissionEvaluated", "Permission Evaluated", ct);
             await AddAuditEventTypeIfMissing(2, "ActionBlocked", "Action Blocked", ct);

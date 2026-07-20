@@ -1,4 +1,4 @@
-﻿using DLPManagementSystem.Common;
+using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.AgentEnrollment;
 using DLPManagementSystem.Helper.Hashing;
 using DLPManagementSystem.Models;
@@ -9,6 +9,8 @@ namespace DLPManagementSystem.Service.Service
 {
     public class AgentEnrollmentService : IAgentEnrollmentService
     {
+        private static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromDays(180);
+
         private readonly DLPSystemContext _db;
 
         public AgentEnrollmentService(DLPSystemContext db)
@@ -16,7 +18,7 @@ namespace DLPManagementSystem.Service.Service
             _db = db;
         }
 
-        public async Task<ApiResponse<AgentEnrollResponseDto>> Enroll(AgentEnrollRequestDto request,CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<AgentEnrollResponseDto>> Enroll(AgentEnrollRequestDto request, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -29,12 +31,12 @@ namespace DLPManagementSystem.Service.Service
                         "البيانات المرسلة غير صحيحة");
                 }
 
-                var nowUtc = DateTime.UtcNow;
-                var tokenHash = SecurityHashHelper.Sha256(request.EnrollmentToken);
+                var nowUtc = DateTimeOffset.UtcNow;
+                var codeHash = SecurityHashHelper.Sha256(request.EnrollmentCode);
 
                 var enrollmentToken = await _db.AgentEnrollmentTokens
                     .FirstOrDefaultAsync(x =>
-                        x.TokenHash == tokenHash &&
+                        x.TokenHash == codeHash &&
                         x.RevokedAtUtc == null &&
                         x.ExpiresAtUtc > nowUtc,
                         cancellationToken);
@@ -42,15 +44,22 @@ namespace DLPManagementSystem.Service.Service
                 if (enrollmentToken == null)
                 {
                     return ApiResponse<AgentEnrollResponseDto>.FailureResponse(
-                        "Invalid or expired enrollment token.",
+                        "Invalid or expired enrollment code.",
                         "رمز تسجيل الجهاز غير صحيح أو منتهي الصلاحية");
                 }
 
-                if (enrollmentToken.MaxUses > 0 &&enrollmentToken.UsedCount >= enrollmentToken.MaxUses)
+                if (enrollmentToken.MaxUses > 0 && enrollmentToken.UsedCount >= enrollmentToken.MaxUses)
                 {
                     return ApiResponse<AgentEnrollResponseDto>.FailureResponse(
-                        "Enrollment token usage limit has been reached.",
+                        "Enrollment code usage limit has been reached.",
                         "تم الوصول إلى الحد الأقصى لاستخدام رمز التسجيل");
+                }
+
+                if (request.TenantId != enrollmentToken.OrganizationId)
+                {
+                    return ApiResponse<AgentEnrollResponseDto>.FailureResponse(
+                        "tenantId does not match the organization for this enrollment code.",
+                        "معرّف المؤسسة لا يطابق رمز التسجيل");
                 }
 
                 var activeDeviceStatus = await _db.DeviceStatuses
@@ -64,42 +73,26 @@ namespace DLPManagementSystem.Service.Service
                 }
 
                 var deviceAlreadyExists = await _db.Devices
-                    .AnyAsync(x =>
-                        x.OrganizationId == enrollmentToken.OrganizationId &&
-                        (
-                            x.MachineName == request.MachineName ||
-                            (!string.IsNullOrWhiteSpace(request.MachineSid) &&
-                             x.MachineSid == request.MachineSid)
-                        ),
-                        cancellationToken);
+                    .AnyAsync(x => x.Id == request.DeviceId, cancellationToken);
 
                 if (deviceAlreadyExists)
                 {
                     return ApiResponse<AgentEnrollResponseDto>.FailureResponse(
-                        $"Device '{request.MachineName}' is already enrolled.",
+                        $"Device '{request.DeviceId}' is already enrolled.",
                         "هذا الجهاز مسجل مسبقًا");
                 }
 
-                var deviceKey = $"dev-{Guid.NewGuid():N}";
-                var agentSecret = SecurityHashHelper.GenerateSecret();
-                var agentSecretHash = SecurityHashHelper.Sha256(agentSecret);
-
                 var device = new Device
                 {
-                    Id = Guid.NewGuid(),
+                    Id = request.DeviceId,
                     OrganizationId = enrollmentToken.OrganizationId,
-                    DeviceKey = deviceKey,
+                    DeviceKey = request.DeviceId.ToString("D"),
                     MachineName = request.MachineName,
-                    MachineSid = request.MachineSid,
-                    OperatingSystem = request.OperatingSystem,
-                    OsVersion = request.OsVersion,
-                    SerialNumber = request.SerialNumber,
-                    MacAddress = request.MacAddress,
                     AgentVersion = request.AgentVersion,
                     StatusId = activeDeviceStatus.Id,
                     EnrolledAtUtc = nowUtc,
                     LastSeenAtUtc = nowUtc,
-                    CurrentPolicyVersion = 1,
+                    CurrentPolicyVersion = 0,
                     CreatedAtUtc = nowUtc,
                     UpdatedAtUtc = nowUtc
                 };
@@ -110,15 +103,28 @@ namespace DLPManagementSystem.Service.Service
 
                 await _db.SaveChangesAsync(cancellationToken);
 
+                var previousCredentials = await _db.DeviceCredentials
+                    .Where(x => x.DeviceId == device.Id && x.RevokedAtUtc == null)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var previousCredential in previousCredentials)
+                {
+                    previousCredential.RevokedAtUtc = nowUtc;
+                }
+
+                var accessToken = SecurityHashHelper.GenerateSecret();
+                var accessTokenHash = SecurityHashHelper.Sha256(accessToken);
+                var expiresAtUtc = nowUtc.Add(AccessTokenLifetime);
+
                 var credential = new DeviceCredential
                 {
                     Id = Guid.NewGuid(),
                     DeviceId = device.Id,
-                    SecretHash = agentSecretHash,
+                    SecretHash = accessTokenHash,
                     CreatedAtUtc = nowUtc,
                     LastUsedAtUtc = null,
                     RevokedAtUtc = null,
-                    RotationDueAtUtc = nowUtc.AddMonths(6)
+                    RotationDueAtUtc = expiresAtUtc
                 };
 
                 _db.DeviceCredentials.Add(credential);
@@ -127,9 +133,8 @@ namespace DLPManagementSystem.Service.Service
 
                 var response = new AgentEnrollResponseDto
                 {
-                    DeviceKey = device.DeviceKey,
-                    AgentSecret = agentSecret,
-                    EnrolledAtUtc = nowUtc
+                    AccessToken = accessToken,
+                    ExpiresAtUtc = expiresAtUtc
                 };
 
                 return ApiResponse<AgentEnrollResponseDto>.SuccessResponse(
@@ -152,24 +157,29 @@ namespace DLPManagementSystem.Service.Service
                 return "Request body is required.";
             }
 
-            if (string.IsNullOrWhiteSpace(request.EnrollmentToken))
+            if (request.TenantId == Guid.Empty)
             {
-                return "EnrollmentToken is required.";
+                return "tenantId is required.";
+            }
+
+            if (request.DeviceId == Guid.Empty)
+            {
+                return "deviceId is required.";
             }
 
             if (string.IsNullOrWhiteSpace(request.MachineName))
             {
-                return "MachineName is required.";
-            }
-
-            if (string.IsNullOrWhiteSpace(request.OperatingSystem))
-            {
-                return "OperatingSystem is required.";
+                return "machineName is required.";
             }
 
             if (string.IsNullOrWhiteSpace(request.AgentVersion))
             {
-                return "AgentVersion is required.";
+                return "agentVersion is required.";
+            }
+
+            if (string.IsNullOrWhiteSpace(request.EnrollmentCode))
+            {
+                return "enrollmentCode is required.";
             }
 
             return null;

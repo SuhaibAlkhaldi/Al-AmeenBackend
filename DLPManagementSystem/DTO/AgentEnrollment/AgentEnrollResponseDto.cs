@@ -1,9 +1,8 @@
-﻿namespace DLPManagementSystem.DTO.AgentEnrollment
+namespace DLPManagementSystem.DTO.AgentEnrollment
 {
     public class AgentEnrollResponseDto
     {
-        public string DeviceKey { get; set; } = string.Empty;
-        public string AgentSecret { get; set; } = string.Empty;
-        public DateTime EnrolledAtUtc { get; set; }
+        public string AccessToken { get; set; } = string.Empty;
+        public DateTimeOffset ExpiresAtUtc { get; set; }
     }
 }

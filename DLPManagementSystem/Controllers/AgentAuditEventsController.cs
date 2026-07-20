@@ -1,13 +1,15 @@
-﻿using DLPManagementSystem.Common;
+using DLPManagementSystem.Authentication;
+using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.AgentAuditEvents;
 using DLPManagementSystem.Service.Interface;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DLPManagementSystem.Controllers
 {
-    [Route("api/agent/audit-events")]
+    [Route("api/v1/agent/events/batch")]
     [ApiController]
+    [Authorize(AuthenticationSchemes = DeviceBearerDefaults.SchemeName)]
     public class AgentAuditEventsController : ControllerBase
     {
         private readonly IAgentAuditEventService _agentAuditEventService;
@@ -18,15 +20,16 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> ReceiveAuditEvents(
-            [FromHeader(Name = "X-Device-Key")] string deviceKey,
-            [FromHeader(Name = "X-Agent-Secret")] string agentSecret,
+        public async Task<IActionResult> ReceiveAuditEventBatch(
             [FromBody] AgentAuditBatchRequestDto request,
             CancellationToken cancellationToken)
         {
-            var response = await _agentAuditEventService.ReceiveAuditEvents(
-                deviceKey,
-                agentSecret,
+            var organizationId = User.GetOrganizationId();
+            var deviceId = User.GetDeviceId();
+
+            var response = await _agentAuditEventService.ReceiveAuditEventBatchAsync(
+                organizationId,
+                deviceId,
                 request,
                 cancellationToken);
 
@@ -35,7 +38,7 @@ namespace DLPManagementSystem.Controllers
                 return BadRequest(response);
             }
 
-            return Ok(response);
+            return Ok(response.Data);
         }
     }
 }

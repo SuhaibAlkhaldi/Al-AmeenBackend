@@ -1,12 +1,13 @@
-﻿using DLPManagementSystem.DTO.AgentEnrollment;
+using DLPManagementSystem.DTO.AgentEnrollment;
 using DLPManagementSystem.Service.Interface;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DLPManagementSystem.Controllers
 {
-    [Route("api/agent/enroll")]
+    [Route("api/v1/agent/enroll")]
     [ApiController]
+    [AllowAnonymous]
     public class AgentEnrollmentController : ControllerBase
     {
         private readonly IAgentEnrollmentService _agentEnrollmentService;
@@ -17,7 +18,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> Enroll([FromBody] AgentEnrollRequestDto request,CancellationToken cancellationToken)
+        public async Task<IActionResult> Enroll([FromBody] AgentEnrollRequestDto request, CancellationToken cancellationToken)
         {
             var response = await _agentEnrollmentService.Enroll(request, cancellationToken);
 
@@ -26,7 +27,7 @@ namespace DLPManagementSystem.Controllers
                 return BadRequest(response);
             }
 
-            return Ok(response);
+            return Ok(response.Data);
         }
     }
 }

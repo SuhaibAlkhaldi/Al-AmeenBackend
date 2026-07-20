@@ -1,14 +1,14 @@
 using DLPManagementSystem.Common;
-using DLPManagementSystem.DTO.AgentPolicy;
+using DLPManagementSystem.DTO.AgentFiles;
 
 namespace DLPManagementSystem.Service.Interface
 {
-    public interface IAgentPolicyService
+    public interface IFileClassificationService
     {
-        Task<ApiResponse<AgentPolicyResultDto>> GetPolicyAsync(
+        Task<ApiResponse<FileClassificationResultDto>> ClassifyAsync(
             Guid organizationId,
             Guid deviceId,
-            long currentVersion,
+            FileClassificationRequestDto request,
             CancellationToken cancellationToken = default);
     }
 }

@@ -1,14 +1,14 @@
-﻿using DLPManagementSystem.Helper.Hashing;
-using DLPManagementSystem.Models;
+using DLPManagementSystem.Authentication;
+using DLPManagementSystem.Common;
 using DLPManagementSystem.Service.Interface;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace DLPManagementSystem.Controllers
 {
     [ApiController]
     [Route("api/v1/agent/policy")]
+    [Authorize(AuthenticationSchemes = DeviceBearerDefaults.SchemeName)]
     public class AgentPolicyController : ControllerBase
     {
         private readonly IAgentPolicyService _service;
@@ -25,14 +25,17 @@ namespace DLPManagementSystem.Controllers
             [FromQuery] long currentVersion,
             CancellationToken cancellationToken)
         {
-            var deviceKey = Request.Headers["X-Device-Key"].FirstOrDefault();
-            var agentSecret = Request.Headers["X-Agent-Secret"].FirstOrDefault();
+            var organizationId = User.GetOrganizationId();
+            var authenticatedDeviceId = User.GetDeviceId();
+
+            if (tenantId != organizationId || deviceId != authenticatedDeviceId)
+            {
+                return BadRequest("tenantId/deviceId do not match the authenticated device.");
+            }
 
             var response = await _service.GetPolicyAsync(
-                deviceKey ?? string.Empty,
-                agentSecret ?? string.Empty,
-                tenantId,
-                deviceId,
+                organizationId,
+                authenticatedDeviceId,
                 currentVersion,
                 cancellationToken);
 

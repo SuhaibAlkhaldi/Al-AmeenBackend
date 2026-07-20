@@ -1,3 +1,4 @@
+using DLPManagementSystem.Authentication;
 using DLPManagementSystem.Data.Seed;
 using DLPManagementSystem.Helper.Health;
 using DLPManagementSystem.Models;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
@@ -66,6 +68,10 @@ builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 builder.Services.AddScoped<IAlertService, AlertService>();
 builder.Services.AddScoped<IPermissionRequestService, PermissionRequestService>();
 builder.Services.AddScoped<IPermissionGrantService, PermissionGrantService>();
+builder.Services.AddScoped<IFileClassificationService, FileClassificationService>();
+builder.Services.AddScoped<IFileKeyProtectionService, FileKeyProtectionService>();
+
+builder.Services.AddDataProtection();
 
 builder.Services.AddDbContext<DLPSystemContext>(options =>
 {
@@ -96,7 +102,9 @@ builder.Services
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
         };
-    });
+    })
+    .AddScheme<AuthenticationSchemeOptions, DeviceBearerAuthenticationHandler>(
+        DeviceBearerDefaults.SchemeName, null);
 
 builder.Services.AddAuthorization();
 

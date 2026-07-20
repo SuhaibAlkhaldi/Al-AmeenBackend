@@ -1,13 +1,14 @@
-﻿namespace DLPManagementSystem.DTO.AgentHeartbeat
+namespace DLPManagementSystem.DTO.AgentHeartbeat
 {
     public class AgentHeartbeatRequestDto
     {
-        public long? PolicyVersion { get; set; }
-
-        public long? CurrentPolicyVersion { get; set; }
-
-        public string? PolicyHash { get; set; }
-
-        public string? Status { get; set; }
+        public Guid TenantId { get; set; }
+        public Guid DeviceId { get; set; }
+        public string MachineName { get; set; } = string.Empty;
+        public string AgentVersion { get; set; } = string.Empty;
+        public string? OsVersion { get; set; }
+        public DateTimeOffset SentAtUtc { get; set; }
+        public long LastAppliedPolicyVersion { get; set; }
+        public int PendingAuditEventCount { get; set; }
     }
 }

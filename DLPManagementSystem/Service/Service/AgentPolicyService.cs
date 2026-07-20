@@ -1,6 +1,5 @@
 ﻿using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.AgentPolicy;
-using DLPManagementSystem.Helper.Hashing;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
@@ -17,32 +16,15 @@ namespace DLPManagementSystem.Service.Service
         }
 
         public async Task<ApiResponse<AgentPolicyResultDto>> GetPolicyAsync(
-            string deviceKey,
-            string agentSecret,
-            Guid tenantId,
+            Guid organizationId,
             Guid deviceId,
             long currentVersion,
             CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(deviceKey))
-            {
-                return ApiResponse<AgentPolicyResultDto>.FailureResponse(
-                    "X-Device-Key header is required.",
-                    "مفتاح الجهاز مطلوب");
-            }
-
-            if (string.IsNullOrWhiteSpace(agentSecret))
-            {
-                return ApiResponse<AgentPolicyResultDto>.FailureResponse(
-                    "X-Agent-Secret header is required.",
-                    "سر الجهاز مطلوب");
-            }
-
             var nowUtc = DateTimeOffset.UtcNow;
-            var agentSecretHash = SecurityHashHelper.Sha256(agentSecret);
 
             var device = await _db.Devices
-                .FirstOrDefaultAsync(x => x.DeviceKey == deviceKey, cancellationToken);
+                .FirstOrDefaultAsync(x => x.Id == deviceId && x.OrganizationId == organizationId, cancellationToken);
 
             if (device == null)
             {
@@ -51,22 +33,8 @@ namespace DLPManagementSystem.Service.Service
                     "الجهاز غير مسجل في النظام");
             }
 
-            var credential = await _db.DeviceCredentials
-                .FirstOrDefaultAsync(x =>
-                    x.DeviceId == device.Id &&
-                    x.RevokedAtUtc == null,
-                    cancellationToken);
-
-            if (credential == null || credential.SecretHash != agentSecretHash)
-            {
-                return ApiResponse<AgentPolicyResultDto>.FailureResponse(
-                    "Invalid device credentials.",
-                    "بيانات اعتماد الجهاز غير صحيحة");
-            }
-
             device.LastSeenAtUtc = nowUtc;
             device.UpdatedAtUtc = nowUtc;
-            credential.LastUsedAtUtc = nowUtc;
 
             var latestPolicyVersion = await _db.PolicyVersions
                 .Where(x => x.OrganizationId == device.OrganizationId)
@@ -107,7 +75,7 @@ namespace DLPManagementSystem.Service.Service
             var snapshot = BuildPolicySnapshot(
                  latestPolicyVersion.Id,
                  latestPolicyVersion.VersionNumber,
-                 tenantId,
+                 organizationId,
                  deviceId,
                  nowUtc);
 

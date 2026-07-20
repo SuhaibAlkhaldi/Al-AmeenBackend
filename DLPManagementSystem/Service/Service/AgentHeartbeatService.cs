@@ -1,6 +1,5 @@
-﻿using DLPManagementSystem.Common;
+using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.AgentHeartbeat;
-using DLPManagementSystem.Helper.Hashing;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
@@ -17,31 +16,20 @@ namespace DLPManagementSystem.Service.Service
         }
 
         public async Task<ApiResponse<AgentHeartbeatResultDto>> ReceiveHeartbeatAsync(
-            string deviceKey,
-            string agentSecret,
-            string? agentVersion,
-            AgentHeartbeatRequestDto? request,
+            Guid organizationId,
+            Guid deviceId,
+            AgentHeartbeatRequestDto request,
             CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(deviceKey))
+            if (request.TenantId != organizationId || request.DeviceId != deviceId)
             {
                 return ApiResponse<AgentHeartbeatResultDto>.FailureResponse(
-                    "X-Device-Key header is required.",
-                    "مفتاح الجهاز مطلوب");
+                    "tenantId/deviceId do not match the authenticated device.",
+                    "معرّف المؤسسة أو الجهاز لا يطابق الجهاز المصادق عليه");
             }
-
-            if (string.IsNullOrWhiteSpace(agentSecret))
-            {
-                return ApiResponse<AgentHeartbeatResultDto>.FailureResponse(
-                    "X-Agent-Secret header is required.",
-                    "سر الجهاز مطلوب");
-            }
-
-            var nowUtc = DateTimeOffset.UtcNow;
-            var agentSecretHash = SecurityHashHelper.Sha256(agentSecret);
 
             var device = await _db.Devices
-                .FirstOrDefaultAsync(x => x.DeviceKey == deviceKey, cancellationToken);
+                .FirstOrDefaultAsync(x => x.Id == deviceId && x.OrganizationId == organizationId, cancellationToken);
 
             if (device == null)
             {
@@ -50,68 +38,45 @@ namespace DLPManagementSystem.Service.Service
                     "الجهاز غير مسجل في النظام");
             }
 
-            var credential = await _db.DeviceCredentials
-                .FirstOrDefaultAsync(x =>
-                    x.DeviceId == device.Id &&
-                    x.RevokedAtUtc == null,
-                    cancellationToken);
-
-            if (credential == null || credential.SecretHash != agentSecretHash)
-            {
-                return ApiResponse<AgentHeartbeatResultDto>.FailureResponse(
-                    "Invalid device credentials.",
-                    "بيانات اعتماد الجهاز غير صحيحة");
-            }
-
-            var reportedPolicyVersion =
-                request?.PolicyVersion ??
-                request?.CurrentPolicyVersion;
+            var nowUtc = DateTimeOffset.UtcNow;
 
             device.LastSeenAtUtc = nowUtc;
+            device.AgentVersion = request.AgentVersion;
             device.UpdatedAtUtc = nowUtc;
 
-            if (!string.IsNullOrWhiteSpace(agentVersion))
+            var latestPolicyVersion = await _db.PolicyVersions
+                .Where(x => x.OrganizationId == organizationId)
+                .OrderByDescending(x => x.VersionNumber)
+                .Select(x => (long?)x.VersionNumber)
+                .FirstOrDefaultAsync(cancellationToken) ?? 0;
+
+            var policyRefreshRequired = latestPolicyVersion > request.LastAppliedPolicyVersion;
+
+            device.CurrentPolicyVersion = request.LastAppliedPolicyVersion;
+
+            var policyState = await _db.DevicePolicyStates
+                .FirstOrDefaultAsync(x => x.DeviceId == device.Id, cancellationToken);
+
+            if (policyState == null)
             {
-                device.AgentVersion = agentVersion;
+                policyState = new DevicePolicyState
+                {
+                    DeviceId = device.Id,
+                    OrganizationId = device.OrganizationId
+                };
+
+                _db.DevicePolicyStates.Add(policyState);
             }
 
-            if (reportedPolicyVersion.HasValue && reportedPolicyVersion.Value > 0)
-            {
-                device.CurrentPolicyVersion = reportedPolicyVersion.Value;
-
-                var policyState = await _db.DevicePolicyStates
-                    .FirstOrDefaultAsync(x => x.DeviceId == device.Id, cancellationToken);
-
-                if (policyState == null)
-                {
-                    policyState = new DevicePolicyState
-                    {
-                        DeviceId = device.Id,
-                        OrganizationId = device.OrganizationId
-                    };
-
-                    _db.DevicePolicyStates.Add(policyState);
-                }
-
-                policyState.LastAppliedPolicyVersion = reportedPolicyVersion.Value;
-                policyState.LastAppliedAtUtc = nowUtc;
-
-                if (!string.IsNullOrWhiteSpace(request?.PolicyHash))
-                {
-                    policyState.LastPolicyHash = request.PolicyHash;
-                }
-            }
-
-            credential.LastUsedAtUtc = nowUtc;
+            policyState.LastAppliedPolicyVersion = request.LastAppliedPolicyVersion;
+            policyState.LastAppliedAtUtc = nowUtc;
 
             await _db.SaveChangesAsync(cancellationToken);
 
             var result = new AgentHeartbeatResultDto
             {
-                DeviceId = device.Id,
-                LastSeenAtUtc = nowUtc,
-                AgentVersion = device.AgentVersion,
-                CurrentPolicyVersion = device.CurrentPolicyVersion
+                ServerTimeUtc = nowUtc,
+                PolicyRefreshRequired = policyRefreshRequired
             };
 
             return ApiResponse<AgentHeartbeatResultDto>.SuccessResponse(

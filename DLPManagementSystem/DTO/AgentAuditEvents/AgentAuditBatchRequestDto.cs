@@ -1,15 +1,13 @@
-﻿namespace DLPManagementSystem.DTO.AgentAuditEvents
+namespace DLPManagementSystem.DTO.AgentAuditEvents
 {
     public class AgentAuditBatchRequestDto
     {
-        public string DeviceKey { get; set; } = string.Empty;
+        public Guid TenantId { get; set; }
+
+        public Guid DeviceId { get; set; }
 
         public string AgentVersion { get; set; } = string.Empty;
 
-        public long PolicyVersion { get; set; }
-
-        public Guid BatchId { get; set; }
-
-        public List<AgentAuditEventRequestDto> Events { get; set; } = new();
+        public List<SecurityEventEnvelopeDto> Events { get; set; } = new();
     }
 }
