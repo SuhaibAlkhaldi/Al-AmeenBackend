@@ -8,7 +8,7 @@ namespace DLPManagementSystem.Controllers
 {
     [ApiController]
     [Route("api/v1/alerts")]
-    [Authorize]
+    [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk,Auditor")]
     public class AlertsController : ControllerBase
     {
         private readonly IAlertService _alertService;
@@ -49,6 +49,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPut("{id:guid}/assign")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin")]
         public async Task<IActionResult> AssignAlert(Guid id, [FromBody] AssignAlertDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -63,6 +64,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPut("{id:guid}/status")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin")]
         public async Task<IActionResult> UpdateAlertStatus(Guid id, [FromBody] UpdateAlertStatusDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();

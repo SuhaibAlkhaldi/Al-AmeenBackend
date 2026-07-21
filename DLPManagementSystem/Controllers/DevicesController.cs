@@ -8,7 +8,7 @@ namespace DLPManagementSystem.Controllers
 {
     [ApiController]
     [Route("api/v1/devices")]
-    [Authorize]
+    [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk,Auditor")]
     public class DevicesController : ControllerBase
     {
         private readonly IDeviceService _deviceService;
@@ -46,6 +46,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk")]
         public async Task<IActionResult> UpdateDevice(Guid id, [FromBody] UpdateDeviceDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -60,6 +61,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk")]
         public async Task<IActionResult> DeleteDevice(Guid id, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -74,6 +76,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost("{id:guid}/assign")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk")]
         public async Task<IActionResult> AssignDevice(Guid id, [FromBody] AssignDeviceDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -89,6 +92,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost("{id:guid}/unassign")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk")]
         public async Task<IActionResult> UnassignDevice(Guid id, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();

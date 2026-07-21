@@ -8,7 +8,7 @@ namespace DLPManagementSystem.Controllers
 {
     [ApiController]
     [Route("api/v1/users")]
-    [Authorize]
+    [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk,Auditor")]
     public class UsersController : ControllerBase
     {
         private readonly IUserService _userService;
@@ -47,6 +47,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "SuperAdmin,HelpDesk")]
         public async Task<IActionResult> CreateUser([FromBody] CreateUserDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -61,6 +62,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "SuperAdmin,HelpDesk")]
         public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -75,6 +77,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost("{id:guid}/reset-password")]
+        [Authorize(Roles = "SuperAdmin,HelpDesk")]
         public async Task<IActionResult> ResetPassword(Guid id, [FromBody] ResetPasswordDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -89,6 +92,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "SuperAdmin,HelpDesk")]
         public async Task<IActionResult> DeleteUser(Guid id, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();

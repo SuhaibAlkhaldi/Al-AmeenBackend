@@ -8,7 +8,7 @@ namespace DLPManagementSystem.Controllers
 {
     [ApiController]
     [Route("api/v1/employees")]
-    [Authorize]
+    [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk,Auditor")]
     public class EmployeesController : ControllerBase
     {
         private readonly IEmployeeService _employeeService;
@@ -47,6 +47,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "SuperAdmin,HelpDesk")]
         public async Task<IActionResult> CreateEmployee([FromBody] CreateEmployeeDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -61,6 +62,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "SuperAdmin,HelpDesk")]
         public async Task<IActionResult> UpdateEmployee(Guid id, [FromBody] UpdateEmployeeDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -75,6 +77,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "SuperAdmin,HelpDesk")]
         public async Task<IActionResult> DeleteEmployee(Guid id, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();

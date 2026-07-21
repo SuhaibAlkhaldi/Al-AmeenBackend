@@ -63,6 +63,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost("{id:guid}/approve")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin")]
         public async Task<IActionResult> Approve(Guid id, [FromBody] ReviewPermissionRequestDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -79,6 +80,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost("{id:guid}/reject")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin")]
         public async Task<IActionResult> Reject(Guid id, [FromBody] ReviewPermissionRequestDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();

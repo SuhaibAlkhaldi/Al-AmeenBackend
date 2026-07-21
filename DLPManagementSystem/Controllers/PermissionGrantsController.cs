@@ -32,6 +32,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost("{id:guid}/revoke")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin")]
         public async Task<IActionResult> Revoke(Guid id, [FromBody] RevokePermissionGrantDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
