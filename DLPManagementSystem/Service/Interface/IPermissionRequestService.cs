@@ -7,6 +7,8 @@ namespace DLPManagementSystem.Service.Interface
     {
         Task<ApiResponse<PagedResultDto<PermissionRequestDto>>> GetRequestsAsync(
             Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
             int? statusId,
             Guid? requestedByEmployeeId,
             int page,
@@ -25,6 +27,7 @@ namespace DLPManagementSystem.Service.Interface
             Guid organizationId,
             Guid id,
             Guid reviewedByUserId,
+            int callerUserTypeId,
             ReviewPermissionRequestDto request,
             CancellationToken cancellationToken = default);
 
@@ -32,6 +35,7 @@ namespace DLPManagementSystem.Service.Interface
             Guid organizationId,
             Guid id,
             Guid reviewedByUserId,
+            int callerUserTypeId,
             ReviewPermissionRequestDto request,
             CancellationToken cancellationToken = default);
     }

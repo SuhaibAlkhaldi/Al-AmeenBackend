@@ -117,6 +117,23 @@ namespace DLPManagementSystem.Service.Service
                 return ApiResponse<UserDetailDto>.FailureResponse("Active user status is not configured.", "حالة المستخدم النشط غير مهيأة");
             }
 
+            // A User created with the "Employee" user type needs a linked Employee row, mirroring
+            // EmployeeService.CreateEmployeeAsync's reverse direction — otherwise the account can never
+            // submit a permission request (PermissionRequestService.CreateAsync requires one).
+            var employeeUserType = await _db.UserTypes.FirstOrDefaultAsync(x => x.Name == "Employee", cancellationToken);
+            var isEmployeeUserType = employeeUserType != null && request.UserTypeId == employeeUserType.Id;
+
+            EmployeeStatus? activeEmployeeStatus = null;
+
+            if (isEmployeeUserType)
+            {
+                activeEmployeeStatus = await _db.EmployeeStatuses.FirstOrDefaultAsync(x => x.Name == "Active", cancellationToken);
+                if (activeEmployeeStatus == null)
+                {
+                    return ApiResponse<UserDetailDto>.FailureResponse("Active employee status is not configured.", "حالة الموظف النشط غير مهيأة");
+                }
+            }
+
             var nowUtc = DateTimeOffset.UtcNow;
 
             var user = new User
@@ -134,9 +151,53 @@ namespace DLPManagementSystem.Service.Service
             };
 
             _db.Users.Add(user);
+
+            if (isEmployeeUserType)
+            {
+                var employeeNumber = await TryGenerateUniqueEmployeeNumberAsync(organizationId, cancellationToken);
+
+                if (employeeNumber == null)
+                {
+                    return ApiResponse<UserDetailDto>.FailureResponse(
+                        "Could not generate a unique employee number. Please try again.",
+                        "تعذر إنشاء رقم وظيفي فريد، يرجى المحاولة مرة أخرى");
+                }
+
+                _db.Employees.Add(new Employee
+                {
+                    Id = Guid.NewGuid(),
+                    OrganizationId = organizationId,
+                    UserId = user.Id,
+                    DepartmentId = null,
+                    EmployeeNumber = employeeNumber,
+                    DisplayName = request.FullName,
+                    Email = request.Email,
+                    StatusId = activeEmployeeStatus!.Id,
+                    CreatedAtUtc = nowUtc
+                });
+            }
+
             await _db.SaveChangesAsync(cancellationToken);
 
             return await GetUserByIdAsync(organizationId, user.Id, cancellationToken);
+        }
+
+        private async Task<string?> TryGenerateUniqueEmployeeNumberAsync(Guid organizationId, CancellationToken cancellationToken)
+        {
+            for (var attempt = 0; attempt < 10; attempt++)
+            {
+                var candidate = $"USR-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+
+                var exists = await _db.Employees
+                    .AnyAsync(x => x.OrganizationId == organizationId && x.EmployeeNumber == candidate, cancellationToken);
+
+                if (!exists)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
 
         public async Task<ApiResponse<UserDetailDto>> UpdateUserAsync(Guid organizationId, Guid id, UpdateUserDto request, CancellationToken cancellationToken = default)

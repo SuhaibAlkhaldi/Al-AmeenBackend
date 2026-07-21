@@ -50,12 +50,38 @@ namespace DLPManagementSystem.Service.Service
 
         public async Task<ApiResponse<PagedResultDto<PermissionRequestDto>>> GetRequestsAsync(
             Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
             int? statusId,
             Guid? requestedByEmployeeId,
             int page,
             int pageSize,
             CancellationToken cancellationToken = default)
         {
+            var effectiveRequestedByEmployeeId = requestedByEmployeeId;
+
+            if (await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                // Employee-type callers can only ever see their own requests — force this regardless of
+                // whatever requestedByEmployeeId the client passed.
+                var callerEmployee = await _db.Employees
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.UserId == callerUserId, cancellationToken);
+
+                if (callerEmployee == null)
+                {
+                    return ApiResponse<PagedResultDto<PermissionRequestDto>>.SuccessResponse(new PagedResultDto<PermissionRequestDto>
+                    {
+                        Items = new List<PermissionRequestDto>(),
+                        TotalCount = 0,
+                        Page = page,
+                        PageSize = pageSize
+                    });
+                }
+
+                effectiveRequestedByEmployeeId = callerEmployee.Id;
+            }
+
             var query = _db.PermissionRequests
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId);
@@ -65,9 +91,9 @@ namespace DLPManagementSystem.Service.Service
                 query = query.Where(x => x.StatusId == statusId.Value);
             }
 
-            if (requestedByEmployeeId.HasValue)
+            if (effectiveRequestedByEmployeeId.HasValue)
             {
-                query = query.Where(x => x.RequestedByEmployeeId == requestedByEmployeeId.Value);
+                query = query.Where(x => x.RequestedByEmployeeId == effectiveRequestedByEmployeeId.Value);
             }
 
             var totalCount = await query.CountAsync(cancellationToken);
@@ -179,9 +205,17 @@ namespace DLPManagementSystem.Service.Service
             Guid organizationId,
             Guid id,
             Guid reviewedByUserId,
+            int callerUserTypeId,
             ReviewPermissionRequestDto request,
             CancellationToken cancellationToken = default)
         {
+            if (await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                return ApiResponse<PermissionRequestDto>.FailureResponse(
+                    "Employee accounts are not permitted to approve permission requests.",
+                    "حسابات الموظفين غير مخوّلة للموافقة على طلبات الصلاحيات");
+            }
+
             var permissionRequest = await _db.PermissionRequests
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
@@ -243,9 +277,17 @@ namespace DLPManagementSystem.Service.Service
             Guid organizationId,
             Guid id,
             Guid reviewedByUserId,
+            int callerUserTypeId,
             ReviewPermissionRequestDto request,
             CancellationToken cancellationToken = default)
         {
+            if (await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                return ApiResponse<PermissionRequestDto>.FailureResponse(
+                    "Employee accounts are not permitted to reject permission requests.",
+                    "حسابات الموظفين غير مخوّلة لرفض طلبات الصلاحيات");
+            }
+
             var permissionRequest = await _db.PermissionRequests
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
@@ -281,5 +323,13 @@ namespace DLPManagementSystem.Service.Service
             return await GetByIdAsync(organizationId, id, cancellationToken);
         }
 
+        private async Task<bool> IsEmployeeUserTypeAsync(int userTypeId, CancellationToken cancellationToken)
+        {
+            var employeeUserType = await _db.UserTypes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Name == "Employee", cancellationToken);
+
+            return employeeUserType != null && userTypeId == employeeUserType.Id;
+        }
     }
 }

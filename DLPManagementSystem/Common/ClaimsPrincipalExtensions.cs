@@ -27,5 +27,11 @@ namespace DLPManagementSystem.Common
             var value = user.FindFirstValue("deviceId");
             return Guid.TryParse(value, out var deviceId) ? deviceId : Guid.Empty;
         }
+
+        public static int GetUserTypeId(this ClaimsPrincipal user)
+        {
+            var value = user.FindFirstValue("userTypeId");
+            return int.TryParse(value, out var userTypeId) ? userTypeId : 0;
+        }
     }
 }

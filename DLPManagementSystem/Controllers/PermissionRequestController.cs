@@ -27,7 +27,9 @@ namespace DLPManagementSystem.Controllers
             CancellationToken cancellationToken = default)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _permissionRequestService.GetRequestsAsync(organizationId, statusId, requestedByEmployeeId, page, pageSize, cancellationToken);
+            var userId = User.GetUserId();
+            var userTypeId = User.GetUserTypeId();
+            var response = await _permissionRequestService.GetRequestsAsync(organizationId, userId, userTypeId, statusId, requestedByEmployeeId, page, pageSize, cancellationToken);
             return Ok(response);
         }
 
@@ -65,7 +67,8 @@ namespace DLPManagementSystem.Controllers
         {
             var organizationId = User.GetOrganizationId();
             var userId = User.GetUserId();
-            var response = await _permissionRequestService.ApproveAsync(organizationId, id, userId, request, cancellationToken);
+            var userTypeId = User.GetUserTypeId();
+            var response = await _permissionRequestService.ApproveAsync(organizationId, id, userId, userTypeId, request, cancellationToken);
 
             if (!response.Success)
             {
@@ -80,7 +83,8 @@ namespace DLPManagementSystem.Controllers
         {
             var organizationId = User.GetOrganizationId();
             var userId = User.GetUserId();
-            var response = await _permissionRequestService.RejectAsync(organizationId, id, userId, request, cancellationToken);
+            var userTypeId = User.GetUserTypeId();
+            var response = await _permissionRequestService.RejectAsync(organizationId, id, userId, userTypeId, request, cancellationToken);
 
             if (!response.Success)
             {
