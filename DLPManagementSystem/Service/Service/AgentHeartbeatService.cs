@@ -44,6 +44,12 @@ namespace DLPManagementSystem.Service.Service
             device.AgentVersion = request.AgentVersion;
             device.UpdatedAtUtc = nowUtc;
 
+            if (!string.IsNullOrWhiteSpace(request.OsVersion))
+            {
+                device.OperatingSystem = request.OsVersion;
+                device.OsVersion = request.OsVersion;
+            }
+
             var latestPolicyVersion = await _db.PolicyVersions
                 .Where(x => x.OrganizationId == organizationId)
                 .OrderByDescending(x => x.VersionNumber)
