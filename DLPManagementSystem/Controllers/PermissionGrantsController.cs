@@ -22,12 +22,13 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> GetGrants(
             [FromQuery] string? subjectId,
             [FromQuery] string? actionKey,
+            [FromQuery] string? status,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             CancellationToken cancellationToken = default)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _permissionGrantService.GetGrantsAsync(organizationId, subjectId, actionKey, page, pageSize, cancellationToken);
+            var response = await _permissionGrantService.GetGrantsAsync(organizationId, subjectId, actionKey, status, page, pageSize, cancellationToken);
             return Ok(response);
         }
 

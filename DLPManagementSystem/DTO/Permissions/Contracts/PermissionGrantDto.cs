@@ -14,6 +14,8 @@
 
         public string SubjectId { get; set; } = string.Empty;
 
+        public string? SubjectDisplayName { get; set; }
+
         public Guid? TargetDeviceId { get; set; }
 
         public string? TargetDeviceName { get; set; }
@@ -41,5 +43,7 @@
         public DateTimeOffset? RevokedAtUtc { get; set; }
 
         public string? RevocationReason { get; set; }
+
+        public string? RevokedByUserName { get; set; }
     }
 }

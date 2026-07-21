@@ -3,3 +3,7 @@ bin/
 obj/
 *.user
 *.suo
+
+# Generated Chrome/Edge extension package + update manifest (deploy step output, not source -
+# see win-form/Al-Ameen-windows/scripts/publish.ps1 -ExtensionPrivateKeyPath)
+DLPManagementSystem/wwwroot/extensions/

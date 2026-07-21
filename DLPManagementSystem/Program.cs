@@ -149,6 +149,21 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// Self-hosted Chrome/Edge extension update manifest + .crx (ExtensionInstallForcelist points here).
+// No auth: the browser updater doesn't send credentials. Deploy by copying
+// win-form/Al-Ameen-windows/artifacts/publish/extensions/* into wwwroot/extensions/.
+var extensionContentTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+extensionContentTypes.Mappings[".crx"] = "application/x-chrome-extension";
+extensionContentTypes.Mappings[".xml"] = "application/xml";
+app.UseStaticFiles(new StaticFileOptions
+{
+    RequestPath = "/extensions",
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
+        Path.Combine(app.Environment.ContentRootPath, "wwwroot", "extensions")),
+    ContentTypeProvider = extensionContentTypes,
+    ServeUnknownFileTypes = false
+});
+
 
 static async Task WriteHealthResponseAsync(HttpContext context, HealthReport report)
 {

@@ -19,6 +19,7 @@ namespace DLPManagementSystem.Service.Service
             Guid organizationId,
             string? subjectId,
             string? actionKey,
+            string? status,
             int page,
             int pageSize,
             CancellationToken cancellationToken = default)
@@ -37,21 +38,60 @@ namespace DLPManagementSystem.Service.Service
                 query = query.Where(x => x.ActionKey == actionKey);
             }
 
-            var totalCount = await query.CountAsync(cancellationToken);
-
-            var entities = await query
+            query = query
                 .Include(x => x.Decision)
                 .Include(x => x.SubjectType)
                 .Include(x => x.GrantType)
                 .Include(x => x.GrantedByUser)
+                .Include(x => x.RevokedByUser)
                 .Include(x => x.TargetDevice)
-                .OrderByDescending(x => x.CreatedAtUtc)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync(cancellationToken);
+                .OrderByDescending(x => x.CreatedAtUtc);
 
             var nowUtc = DateTimeOffset.UtcNow;
-            var items = entities.Select(x => MapToDto(x, nowUtc)).ToList();
+
+            int totalCount;
+            List<PermissionGrant> pageEntities;
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                // RuntimeStatus is computed at read time rather than stored, so filtering by it
+                // requires materializing all matching grants first. Org grant volume is small
+                // enough (low thousands at most) for this to be cheap.
+                var allEntities = await query.ToListAsync(cancellationToken);
+                var filtered = allEntities
+                    .Where(x => string.Equals(ComputeRuntimeStatus(x, nowUtc), status, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                totalCount = filtered.Count;
+                pageEntities = filtered
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+            }
+            else
+            {
+                totalCount = await query.CountAsync(cancellationToken);
+                pageEntities = await query
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync(cancellationToken);
+            }
+
+            var employeeSubjectIds = pageEntities
+                .Where(x => x.SubjectType.Name == "Employee" && Guid.TryParse(x.SubjectId, out _))
+                .Select(x => Guid.Parse(x.SubjectId))
+                .Distinct()
+                .ToList();
+
+            var employeeNames = employeeSubjectIds.Count == 0
+                ? new Dictionary<Guid, string>()
+                : await _db.Employees
+                    .AsNoTracking()
+                    .Where(x => x.OrganizationId == organizationId && employeeSubjectIds.Contains(x.Id))
+                    .Select(x => new { x.Id, x.DisplayName })
+                    .ToDictionaryAsync(x => x.Id, x => x.DisplayName, cancellationToken);
+
+            var items = pageEntities.Select(x => MapToDto(x, nowUtc, employeeNames)).ToList();
 
             var result = new PagedResultDto<PermissionGrantDto>
             {
@@ -93,25 +133,34 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<bool>.SuccessResponse(true, "Permission grant revoked successfully.", "تم إلغاء منحة الصلاحية بنجاح");
         }
 
-        private static PermissionGrantDto MapToDto(PermissionGrant grant, DateTimeOffset nowUtc)
+        private static string ComputeRuntimeStatus(PermissionGrant grant, DateTimeOffset nowUtc)
         {
-            string runtimeStatus;
-
             if (grant.RevokedAtUtc != null)
             {
-                runtimeStatus = "Revoked";
+                return "Revoked";
             }
-            else if (grant.ExpiresAtUtc != null && grant.ExpiresAtUtc <= nowUtc)
+
+            if (grant.ExpiresAtUtc != null && grant.ExpiresAtUtc <= nowUtc)
             {
-                runtimeStatus = "Expired";
+                return "Expired";
             }
-            else if (grant.StartsAtUtc > nowUtc)
+
+            if (grant.StartsAtUtc > nowUtc)
             {
-                runtimeStatus = "Pending";
+                return "Pending";
             }
-            else
+
+            return "Active";
+        }
+
+        private static PermissionGrantDto MapToDto(PermissionGrant grant, DateTimeOffset nowUtc, IReadOnlyDictionary<Guid, string> employeeNames)
+        {
+            var runtimeStatus = ComputeRuntimeStatus(grant, nowUtc);
+
+            string? subjectDisplayName = null;
+            if (grant.SubjectType.Name == "Employee" && Guid.TryParse(grant.SubjectId, out var subjectGuid))
             {
-                runtimeStatus = "Active";
+                employeeNames.TryGetValue(subjectGuid, out subjectDisplayName);
             }
 
             return new PermissionGrantDto
@@ -122,6 +171,7 @@ namespace DLPManagementSystem.Service.Service
                 Decision = grant.Decision.Name,
                 SubjectType = grant.SubjectType.Name,
                 SubjectId = grant.SubjectId,
+                SubjectDisplayName = subjectDisplayName,
                 TargetDeviceId = grant.TargetDeviceId,
                 TargetDeviceName = grant.TargetDevice?.MachineName,
                 GrantType = grant.GrantType.Name,
@@ -135,7 +185,8 @@ namespace DLPManagementSystem.Service.Service
                 SourcePermissionRequestId = grant.SourcePermissionRequestId,
                 CreatedAtUtc = grant.CreatedAtUtc,
                 RevokedAtUtc = grant.RevokedAtUtc,
-                RevocationReason = grant.RevocationReason
+                RevocationReason = grant.RevocationReason,
+                RevokedByUserName = grant.RevokedByUser?.FullName
             };
         }
     }

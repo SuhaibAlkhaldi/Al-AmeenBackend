@@ -9,6 +9,7 @@ namespace DLPManagementSystem.Service.Interface
             Guid organizationId,
             string? subjectId,
             string? actionKey,
+            string? status,
             int page,
             int pageSize,
             CancellationToken cancellationToken = default);
