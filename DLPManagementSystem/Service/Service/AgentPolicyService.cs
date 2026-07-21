@@ -1,4 +1,4 @@
-﻿using DLPManagementSystem.Common;
+using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.AgentPolicy;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
@@ -55,12 +55,17 @@ namespace DLPManagementSystem.Service.Service
                     "لا يوجد تحديث جديد للسياسة");
             }
 
+            var defaultPermissions = await BuildDefaultPermissionsAsync(cancellationToken);
+            var grants = await BuildGrantsForDeviceAsync(organizationId, device.Id, nowUtc, cancellationToken);
+
             var snapshot = BuildPolicySnapshot(
                  latestPolicyVersion.Id,
                  latestPolicyVersion.VersionNumber,
                  organizationId,
                  deviceId,
-                 nowUtc);
+                 nowUtc,
+                 defaultPermissions,
+                 grants);
 
             await DevicePolicyStateUpsert.ApplyAsync(
                 _db,
@@ -83,12 +88,97 @@ namespace DLPManagementSystem.Service.Service
                 "يوجد تحديث جديد للسياسة");
         }
 
+        // The device's currently-assigned employee's active grants, re-keyed to a DeviceId-scoped
+        // grant (the agent already knows how to match DeviceId — it has no concept of "Employee").
+        // Includes grants targeted at this specific device as well as employee-wide ones (TargetDeviceId
+        // null). Only RuntimeStatus == Active grants are sent; Pending/Expired/Revoked stay server-side.
+        private async Task<List<AgentPermissionGrantDto>> BuildGrantsForDeviceAsync(
+            Guid organizationId,
+            Guid deviceId,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken)
+        {
+            var assignedEmployeeId = await _db.DeviceUserAssignments
+                .AsNoTracking()
+                .Where(x => x.DeviceId == deviceId && x.UnassignedAtUtc == null)
+                .Select(x => (Guid?)x.EmployeeId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (assignedEmployeeId == null)
+            {
+                return new List<AgentPermissionGrantDto>();
+            }
+
+            var employeeIdString = assignedEmployeeId.Value.ToString();
+
+            var candidates = await _db.PermissionGrants
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId
+                    && x.SubjectType.Name == "Employee"
+                    && x.SubjectId == employeeIdString
+                    && (x.TargetDeviceId == null || x.TargetDeviceId == deviceId))
+                .Select(x => new
+                {
+                    x.Id,
+                    x.ActionKey,
+                    DecisionName = x.Decision.Name,
+                    GrantTypeName = x.GrantType.Name,
+                    x.Priority,
+                    x.StartsAtUtc,
+                    x.ExpiresAtUtc,
+                    x.Reason,
+                    GrantedByName = x.GrantedByUser.FullName,
+                    x.CreatedAtUtc,
+                    x.RevokedAtUtc
+                })
+                .ToListAsync(cancellationToken);
+
+            return candidates
+                .Where(g => PermissionGrantRuntimeStatus.Compute(g.RevokedAtUtc, g.ExpiresAtUtc, g.StartsAtUtc, nowUtc) == "Active")
+                .Select(g => new AgentPermissionGrantDto
+                {
+                    GrantId = g.Id,
+                    ActionKey = g.ActionKey,
+                    Allowed = g.DecisionName == "Allow",
+                    SubjectType = "DeviceId",
+                    SubjectId = deviceId.ToString(),
+                    Source = g.GrantTypeName == "Temporary" ? "TemporaryGrant" : "PermanentPolicy",
+                    Priority = g.Priority,
+                    StartsAtUtc = g.StartsAtUtc,
+                    ExpiresAtUtc = g.ExpiresAtUtc,
+                    Reason = g.Reason,
+                    GrantedBy = g.GrantedByName,
+                    CreatedAtUtc = g.CreatedAtUtc,
+                    RevokedAtUtc = null,
+                    RevokedBy = null
+                })
+                .ToList();
+        }
+
+        // The real, admin-manageable per-action default (Allow/Deny) from PermissionActions —
+        // replaces what used to be a hardcoded dictionary disconnected from this table.
+        private async Task<Dictionary<string, bool>> BuildDefaultPermissionsAsync(CancellationToken cancellationToken)
+        {
+            var rows = await _db.PermissionActions
+                .AsNoTracking()
+                .Where(x => x.IsEnabled)
+                .Select(x => new { x.Key, DecisionName = x.DefaultDecision.Name })
+                .ToListAsync(cancellationToken);
+
+            return rows.ToDictionary(
+                x => x.Key,
+                x => x.DecisionName == "Allow",
+                StringComparer.OrdinalIgnoreCase);
+        }
+
         private static AgentPolicySnapshotDto BuildPolicySnapshot(
             Guid policyId,
             long versionNumber,
             Guid organizationId,
             Guid deviceId,
-            DateTimeOffset nowUtc)
+            DateTimeOffset nowUtc,
+            Dictionary<string, bool> defaultPermissions,
+            List<AgentPermissionGrantDto> grants)
         {
             return new AgentPolicySnapshotDto
             {
@@ -130,86 +220,60 @@ namespace DLPManagementSystem.Service.Service
                     },
                     Permissions = new AgentPermissionPolicyDto
                     {
-                        DefaultPermissions = BuildDefaultPermissions(),
-                        Grants = new List<object>()
+                        DefaultPermissions = defaultPermissions,
+                        Grants = grants
                     },
                     SensitiveRules = BuildDefaultSensitiveRules()
                 }
             };
         }
+
         private static List<AgentSensitiveRuleDto> BuildDefaultSensitiveRules()
         {
             return new List<AgentSensitiveRuleDto>
-    {
-        new AgentSensitiveRuleDto
-        {
-            Id = "word-confidential",
-            Name = "Confidential keyword",
-            Type = "Keyword",
-            Value = "confidential",
-            Pattern = "",
-            Enabled = true,
-            CaseSensitive = false,
-            Normalize = false,
-            DetectFragments = false,
-            BlockIndividualFragments = false,
-            MinimumBlockedFragmentLength = 3
-        },
-        new AgentSensitiveRuleDto
-        {
-            Id = "any-email-address",
-            Name = "Any email address",
-            Type = "AnyEmail",
-            Value = "",
-            Pattern = "",
-            Enabled = true,
-            CaseSensitive = false,
-            Normalize = false,
-            DetectFragments = true,
-            BlockIndividualFragments = false,
-            MinimumBlockedFragmentLength = 3
-        },
-        new AgentSensitiveRuleDto
-        {
-            Id = "iban-regex",
-            Name = "IBAN pattern",
-            Type = "Regex",
-            Value = "",
-            Pattern = "\\b[A-Z]{2}\\d{2}[A-Z0-9]{11,30}\\b",
-            Enabled = true,
-            CaseSensitive = false,
-            Normalize = false,
-            DetectFragments = false,
-            BlockIndividualFragments = false,
-            MinimumBlockedFragmentLength = 3
-        }
-    };
-        }
-        private static Dictionary<string, bool> BuildDefaultPermissions()
-        {
-            return new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
             {
-                ["screen.capture"] = false,
-                ["screen.recording"] = false,
-
-                ["clipboard.copy-sensitive"] = false,
-
-                ["browser.download"] = false,
-                ["browser.upload"] = false,
-                ["browser.drag-drop"] = false,
-                ["browser.file-paste"] = false,
-                ["browser.image-paste"] = false,
-
-                ["software.install"] = false,
-
-                ["usb.device-connect"] = false,
-                ["usb.storage"] = false,
-                ["usb.mobile-device"] = false,
-
-                ["file.encrypt"] = true,
-                ["file.decrypt"] = true,
-
-                ["policy.apply"] = true
+                new AgentSensitiveRuleDto
+                {
+                    Id = "word-confidential",
+                    Name = "Confidential keyword",
+                    Type = "Keyword",
+                    Value = "confidential",
+                    Pattern = "",
+                    Enabled = true,
+                    CaseSensitive = false,
+                    Normalize = false,
+                    DetectFragments = false,
+                    BlockIndividualFragments = false,
+                    MinimumBlockedFragmentLength = 3
+                },
+                new AgentSensitiveRuleDto
+                {
+                    Id = "any-email-address",
+                    Name = "Any email address",
+                    Type = "AnyEmail",
+                    Value = "",
+                    Pattern = "",
+                    Enabled = true,
+                    CaseSensitive = false,
+                    Normalize = false,
+                    DetectFragments = true,
+                    BlockIndividualFragments = false,
+                    MinimumBlockedFragmentLength = 3
+                },
+                new AgentSensitiveRuleDto
+                {
+                    Id = "iban-regex",
+                    Name = "IBAN pattern",
+                    Type = "Regex",
+                    Value = "",
+                    Pattern = "\\b[A-Z]{2}\\d{2}[A-Z0-9]{11,30}\\b",
+                    Enabled = true,
+                    CaseSensitive = false,
+                    Normalize = false,
+                    DetectFragments = false,
+                    BlockIndividualFragments = false,
+                    MinimumBlockedFragmentLength = 3
+                }
             };
         }
     }

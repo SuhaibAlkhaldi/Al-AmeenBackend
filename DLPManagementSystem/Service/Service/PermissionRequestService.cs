@@ -54,11 +54,13 @@ namespace DLPManagementSystem.Service.Service
 
         private readonly DLPSystemContext _db;
         private readonly IPermissionLookupService _lookupService;
+        private readonly IPolicyVersionService _policyVersionService;
 
-        public PermissionRequestService(DLPSystemContext db, IPermissionLookupService lookupService)
+        public PermissionRequestService(DLPSystemContext db, IPermissionLookupService lookupService, IPolicyVersionService policyVersionService)
         {
             _db = db;
             _lookupService = lookupService;
+            _policyVersionService = policyVersionService;
         }
 
         public async Task<ApiResponse<PagedResultDto<PermissionRequestDto>>> GetRequestsAsync(
@@ -330,6 +332,15 @@ namespace DLPManagementSystem.Service.Service
             permissionRequest.ReviewNotes = request.ReviewNotes;
             permissionRequest.ResultPermissionGrantId = grant.Id;
             permissionRequest.UpdatedAtUtc = nowUtc;
+
+            await _policyVersionService.BumpAsync(
+                organizationId,
+                reviewedByUserId,
+                "GrantApproved",
+                "PermissionGrant",
+                grant.Id,
+                $"Permission '{grant.ActionKey}' approved for subject {grant.SubjectId}.",
+                cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
 

@@ -9,10 +9,12 @@ namespace DLPManagementSystem.Service.Service
     public class PermissionGrantService : IPermissionGrantService
     {
         private readonly DLPSystemContext _db;
+        private readonly IPolicyVersionService _policyVersionService;
 
-        public PermissionGrantService(DLPSystemContext db)
+        public PermissionGrantService(DLPSystemContext db, IPolicyVersionService policyVersionService)
         {
             _db = db;
+            _policyVersionService = policyVersionService;
         }
 
         public async Task<ApiResponse<PagedResultDto<PermissionGrantDto>>> GetGrantsAsync(
@@ -127,6 +129,15 @@ namespace DLPManagementSystem.Service.Service
             grant.RevokedAtUtc = DateTimeOffset.UtcNow;
             grant.RevokedByUserId = revokedByUserId;
             grant.RevocationReason = request.RevocationReason;
+
+            await _policyVersionService.BumpAsync(
+                organizationId,
+                revokedByUserId,
+                "GrantRevoked",
+                "PermissionGrant",
+                grant.Id,
+                $"Permission '{grant.ActionKey}' revoked for subject {grant.SubjectId}.",
+                cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
 

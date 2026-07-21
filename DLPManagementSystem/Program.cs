@@ -59,6 +59,7 @@ builder.Services.AddScoped<IAgentPolicyService, AgentPolicyService>();
 builder.Services.AddMemoryCache();
 
 builder.Services.AddScoped<IPermissionLookupService, PermissionLookupService>();
+builder.Services.AddScoped<IPolicyVersionService, PolicyVersionService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILookupsService, LookupsService>();

@@ -63,7 +63,29 @@
         public Dictionary<string, bool> DefaultPermissions { get; set; } =
             new(StringComparer.OrdinalIgnoreCase);
 
-        public List<object> Grants { get; set; } = new();
+        public List<AgentPermissionGrantDto> Grants { get; set; } = new();
+    }
+
+    // Mirrors CompanyDlp.Contracts.PermissionGrant (agent side) field-for-field so it deserializes
+    // directly there. Re-keyed to SubjectType="DeviceId"/SubjectId=<this device's id> before being
+    // sent, since the agent has no concept of an "Employee" subject — the backend resolves which
+    // employee a device is assigned to and hands the agent something it already knows how to match.
+    public class AgentPermissionGrantDto
+    {
+        public Guid GrantId { get; set; }
+        public string ActionKey { get; set; } = "";
+        public bool Allowed { get; set; }
+        public string SubjectType { get; set; } = "";
+        public string SubjectId { get; set; } = "";
+        public string Source { get; set; } = "";
+        public int Priority { get; set; }
+        public DateTimeOffset StartsAtUtc { get; set; }
+        public DateTimeOffset? ExpiresAtUtc { get; set; }
+        public string Reason { get; set; } = "";
+        public string GrantedBy { get; set; } = "";
+        public DateTimeOffset CreatedAtUtc { get; set; }
+        public DateTimeOffset? RevokedAtUtc { get; set; }
+        public string? RevokedBy { get; set; }
     }
 
     public class AgentSensitiveRuleDto

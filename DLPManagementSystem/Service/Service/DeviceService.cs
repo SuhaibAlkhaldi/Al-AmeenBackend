@@ -9,10 +9,12 @@ namespace DLPManagementSystem.Service.Service
     public class DeviceService : IDeviceService
     {
         private readonly DLPSystemContext _db;
+        private readonly IPolicyVersionService _policyVersionService;
 
-        public DeviceService(DLPSystemContext db)
+        public DeviceService(DLPSystemContext db, IPolicyVersionService policyVersionService)
         {
             _db = db;
+            _policyVersionService = policyVersionService;
         }
 
         public async Task<ApiResponse<PagedResultDto<DeviceListItemDto>>> GetDevicesAsync(
@@ -182,7 +184,7 @@ namespace DLPManagementSystem.Service.Service
                 activeAssignment.UnassignedAtUtc = nowUtc;
             }
 
-            _db.DeviceUserAssignments.Add(new DeviceUserAssignment
+            var assignment = new DeviceUserAssignment
             {
                 Id = Guid.NewGuid(),
                 OrganizationId = organizationId,
@@ -192,7 +194,18 @@ namespace DLPManagementSystem.Service.Service
                 IsPrimary = true,
                 AssignedAtUtc = nowUtc,
                 AssignedByUserId = assignedByUserId
-            });
+            };
+
+            _db.DeviceUserAssignments.Add(assignment);
+
+            await _policyVersionService.BumpAsync(
+                organizationId,
+                assignedByUserId,
+                "DeviceAssigned",
+                "Device",
+                id,
+                $"Device '{device.MachineName}' assigned to employee '{employee.DisplayName}'.",
+                cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -224,6 +237,15 @@ namespace DLPManagementSystem.Service.Service
             {
                 activeAssignment.UnassignedAtUtc = nowUtc;
             }
+
+            await _policyVersionService.BumpAsync(
+                organizationId,
+                null,
+                "DeviceUnassigned",
+                "Device",
+                id,
+                "Device unassigned from its employee.",
+                cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
 
