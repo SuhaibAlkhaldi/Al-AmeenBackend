@@ -35,9 +35,22 @@ namespace DLPManagementSystem.Service.Service
             ReviewDecision = x.ReviewDecision != null ? x.ReviewDecision.Name : null,
             ReviewNotes = x.ReviewNotes,
             ResultPermissionGrantId = x.ResultPermissionGrantId,
+            GrantedGrantType = x.ResultPermissionGrant != null ? x.ResultPermissionGrant.GrantType.Name : null,
+            GrantedStartsAtUtc = x.ResultPermissionGrant != null ? x.ResultPermissionGrant.StartsAtUtc : (DateTimeOffset?)null,
+            GrantedExpiresAtUtc = x.ResultPermissionGrant != null ? x.ResultPermissionGrant.ExpiresAtUtc : null,
+            GrantRevokedAtUtc = x.ResultPermissionGrant != null ? x.ResultPermissionGrant.RevokedAtUtc : null,
+            GrantRevocationReason = x.ResultPermissionGrant != null ? x.ResultPermissionGrant.RevocationReason : null,
             CreatedAtUtc = x.CreatedAtUtc,
             UpdatedAtUtc = x.UpdatedAtUtc
         };
+
+        private static void PopulateGrantRuntimeStatus(PermissionRequestDto dto, DateTimeOffset nowUtc)
+        {
+            if (dto.GrantedStartsAtUtc.HasValue)
+            {
+                dto.GrantRuntimeStatus = PermissionGrantRuntimeStatus.Compute(dto.GrantRevokedAtUtc, dto.GrantedExpiresAtUtc, dto.GrantedStartsAtUtc.Value, nowUtc);
+            }
+        }
 
         private readonly DLPSystemContext _db;
         private readonly IPermissionLookupService _lookupService;
@@ -105,6 +118,12 @@ namespace DLPManagementSystem.Service.Service
                 .Select(ToDto)
                 .ToListAsync(cancellationToken);
 
+            var nowUtc = DateTimeOffset.UtcNow;
+            foreach (var item in items)
+            {
+                PopulateGrantRuntimeStatus(item, nowUtc);
+            }
+
             var result = new PagedResultDto<PermissionRequestDto>
             {
                 Items = items,
@@ -128,6 +147,8 @@ namespace DLPManagementSystem.Service.Service
             {
                 return ApiResponse<PermissionRequestDto>.FailureResponse("Permission request was not found.", "طلب الصلاحية غير موجود");
             }
+
+            PopulateGrantRuntimeStatus(dto, DateTimeOffset.UtcNow);
 
             return ApiResponse<PermissionRequestDto>.SuccessResponse(dto);
         }
@@ -217,6 +238,7 @@ namespace DLPManagementSystem.Service.Service
             }
 
             var permissionRequest = await _db.PermissionRequests
+                .Include(x => x.RequestedGrantType)
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
             if (permissionRequest == null)
@@ -239,6 +261,47 @@ namespace DLPManagementSystem.Service.Service
                 return ApiResponse<PermissionRequestDto>.FailureResponse(ex.Message, "بيانات مرجعية مطلوبة غير موجودة");
             }
 
+            int grantTypeId;
+            string grantTypeName;
+
+            if (!string.IsNullOrWhiteSpace(request.GrantType))
+            {
+                try
+                {
+                    grantTypeId = await _lookupService.GetPermissionGrantTypeId(request.GrantType, cancellationToken);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return ApiResponse<PermissionRequestDto>.FailureResponse(ex.Message, "بيانات مرجعية مطلوبة غير موجودة");
+                }
+
+                grantTypeName = request.GrantType;
+            }
+            else
+            {
+                grantTypeId = permissionRequest.RequestedGrantTypeId;
+                grantTypeName = permissionRequest.RequestedGrantType.Name;
+            }
+
+            var startsAtUtc = request.StartsAtUtc ?? permissionRequest.RequestedStartsAtUtc ?? nowUtc;
+            DateTimeOffset? expiresAtUtc;
+
+            if (string.Equals(grantTypeName, "Temporary", StringComparison.OrdinalIgnoreCase))
+            {
+                expiresAtUtc = request.ExpiresAtUtc ?? permissionRequest.RequestedExpiresAtUtc;
+
+                if (expiresAtUtc == null || expiresAtUtc <= startsAtUtc)
+                {
+                    return ApiResponse<PermissionRequestDto>.FailureResponse(
+                        "A temporary grant requires an expiry date/time in the future of its start time.",
+                        "المنحة المؤقتة تتطلب تاريخ/وقت انتهاء صلاحية بعد وقت البدء");
+                }
+            }
+            else
+            {
+                expiresAtUtc = null;
+            }
+
             var grant = new PermissionGrant
             {
                 Id = Guid.NewGuid(),
@@ -248,10 +311,10 @@ namespace DLPManagementSystem.Service.Service
                 SubjectTypeId = permissionRequest.SubjectTypeId,
                 SubjectId = permissionRequest.SubjectId,
                 TargetDeviceId = permissionRequest.TargetDeviceId,
-                GrantTypeId = permissionRequest.RequestedGrantTypeId,
+                GrantTypeId = grantTypeId,
                 Priority = 500,
-                StartsAtUtc = permissionRequest.RequestedStartsAtUtc ?? nowUtc,
-                ExpiresAtUtc = permissionRequest.RequestedExpiresAtUtc,
+                StartsAtUtc = startsAtUtc,
+                ExpiresAtUtc = expiresAtUtc,
                 Reason = permissionRequest.BusinessJustification,
                 GrantedByUserId = reviewedByUserId,
                 SourcePermissionRequestId = permissionRequest.Id,

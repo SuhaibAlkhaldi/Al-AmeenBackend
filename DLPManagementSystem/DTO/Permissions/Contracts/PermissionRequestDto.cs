@@ -50,6 +50,20 @@
 
         public Guid? ResultPermissionGrantId { get; set; }
 
+        // Actual terms of the resulting grant, when one exists — may differ from RequestedGrantType/
+        // RequestedExpiresAtUtc above if the admin changed them at approval time.
+        public string? GrantedGrantType { get; set; }
+
+        public DateTimeOffset? GrantedStartsAtUtc { get; set; }
+
+        public DateTimeOffset? GrantedExpiresAtUtc { get; set; }
+
+        public string? GrantRuntimeStatus { get; set; }
+
+        public DateTimeOffset? GrantRevokedAtUtc { get; set; }
+
+        public string? GrantRevocationReason { get; set; }
+
         public DateTimeOffset CreatedAtUtc { get; set; }
 
         public DateTimeOffset? UpdatedAtUtc { get; set; }

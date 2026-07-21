@@ -135,22 +135,7 @@ namespace DLPManagementSystem.Service.Service
 
         private static string ComputeRuntimeStatus(PermissionGrant grant, DateTimeOffset nowUtc)
         {
-            if (grant.RevokedAtUtc != null)
-            {
-                return "Revoked";
-            }
-
-            if (grant.ExpiresAtUtc != null && grant.ExpiresAtUtc <= nowUtc)
-            {
-                return "Expired";
-            }
-
-            if (grant.StartsAtUtc > nowUtc)
-            {
-                return "Pending";
-            }
-
-            return "Active";
+            return PermissionGrantRuntimeStatus.Compute(grant.RevokedAtUtc, grant.ExpiresAtUtc, grant.StartsAtUtc, nowUtc);
         }
 
         private static PermissionGrantDto MapToDto(PermissionGrant grant, DateTimeOffset nowUtc, IReadOnlyDictionary<Guid, string> employeeNames)
