@@ -70,6 +70,9 @@ public partial class PermissionRequest
     [InverseProperty("PermissionRequests")]
     public virtual PermissionAction ActionKeyNavigation { get; set; } = null!;
 
+    [InverseProperty("PermissionRequest")]
+    public virtual ICollection<AuditEvent> AuditEvents { get; set; } = new List<AuditEvent>();
+
     [ForeignKey("OrganizationId")]
     [InverseProperty("PermissionRequests")]
     public virtual Organization Organization { get; set; } = null!;

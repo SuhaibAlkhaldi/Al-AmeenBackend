@@ -336,6 +336,8 @@ public partial class DLPSystemContext : DbContext
 
             entity.HasOne(d => d.PermissionGrant).WithMany(p => p.AuditEvents).HasConstraintName("FK_AuditEvents_PermissionGrant");
 
+            entity.HasOne(d => d.PermissionRequest).WithMany(p => p.AuditEvents).HasConstraintName("FK_AuditEvents_PermissionRequest");
+
             entity.HasOne(d => d.ReasonCode).WithMany(p => p.AuditEvents).HasConstraintName("FK_AuditEvents_ReasonCode");
         });
 

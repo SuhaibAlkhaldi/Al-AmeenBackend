@@ -112,14 +112,21 @@ namespace DLPManagementSystem.Service.Service
                     .Distinct()
                     .ToList();
 
-                var existingGrantIdSet = permissionGrantIds.Count == 0
-                    ? new HashSet<Guid>()
+                // Carries enough of each referenced grant's lifecycle state to (a) confirm the
+                // grant genuinely exists (replaces the old existingGrantIdSet membership check) and
+                // (b) re-check, at receive time, whether a Block decision has since been superseded
+                // by the grant becoming Active — a blocked event queued around the time of approval
+                // and delivered late should not raise a stale Alert once the grant is active.
+                var grantRuntimeInfo = permissionGrantIds.Count == 0
+                    ? new Dictionary<Guid, (DateTimeOffset? RevokedAtUtc, DateTimeOffset? ExpiresAtUtc, DateTimeOffset StartsAtUtc, Guid? SourcePermissionRequestId)>()
                     : (await _db.PermissionGrants
                             .AsNoTracking()
                             .Where(x => permissionGrantIds.Contains(x.Id))
-                            .Select(x => x.Id)
+                            .Select(x => new { x.Id, x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, x.SourcePermissionRequestId })
                             .ToListAsync(cancellationToken))
-                        .ToHashSet();
+                        .ToDictionary(
+                            x => x.Id,
+                            x => (x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, x.SourcePermissionRequestId));
 
                 // Every Block decision raises an alert (see below). Resolve the "New" status and the
                 // "High" level by name once, the same way the other lookup maps above are resolved,
@@ -202,9 +209,26 @@ namespace DLPManagementSystem.Service.Service
                     }
 
                     Guid? permissionGrantId = envelope.PermissionGrantId.HasValue &&
-                        existingGrantIdSet.Contains(envelope.PermissionGrantId.Value)
+                        grantRuntimeInfo.ContainsKey(envelope.PermissionGrantId.Value)
                             ? envelope.PermissionGrantId
                             : null;
+
+                    Guid? permissionRequestId = permissionGrantId.HasValue
+                        ? grantRuntimeInfo[permissionGrantId.Value].SourcePermissionRequestId
+                        : null;
+
+                    // A Block decision is stale if the grant it references is, right now, Active —
+                    // i.e. the block was already superseded by approval by the time this event
+                    // (queued client-side, possibly delayed) actually arrived. This does not touch
+                    // Allow/AuditOnly/Error events, and never alters the persisted AuditEvent itself —
+                    // it only decides whether a Block should still raise a new Alert.
+                    var isStaleBlock = mappedDecisionName == "Block"
+                        && permissionGrantId.HasValue
+                        && PermissionGrantRuntimeStatus.Compute(
+                            grantRuntimeInfo[permissionGrantId.Value].RevokedAtUtc,
+                            grantRuntimeInfo[permissionGrantId.Value].ExpiresAtUtc,
+                            grantRuntimeInfo[permissionGrantId.Value].StartsAtUtc,
+                            nowUtc) == "Active";
 
                     // Fields without a dedicated column on AuditEvent are preserved here for full fidelity.
                     var metadata = new
@@ -225,7 +249,10 @@ namespace DLPManagementSystem.Service.Service
                         // TODO: verify integrityHash once the agent's signing/hash algorithm is documented.
                         integrityHash = envelope.IntegrityHash,
                         rawReasonCode = reasonCodeId == null ? envelope.ReasonCode : null,
-                        rawPermissionGrantId = permissionGrantId == null ? envelope.PermissionGrantId : null
+                        rawPermissionGrantId = permissionGrantId == null ? envelope.PermissionGrantId : null,
+                        // Kept visible on the persisted event even when no Alert is raised, so a
+                        // Block decision never silently disappears from the audit trail.
+                        supersededByActiveGrant = isStaleBlock
                     };
 
                     var auditEvent = new AuditEvent
@@ -241,6 +268,7 @@ namespace DLPManagementSystem.Service.Service
                         DecisionId = decisionId,
                         ReasonCodeId = reasonCodeId,
                         PermissionGrantId = permissionGrantId,
+                        PermissionRequestId = permissionRequestId,
                         PolicyVersion = envelope.PolicyVersion,
                         OccurredAtUtc = envelope.OccurredAtUtc,
                         ReceivedAtUtc = nowUtc,
@@ -253,7 +281,8 @@ namespace DLPManagementSystem.Service.Service
 
                     // Only Block decisions raise an alert for now — that's the only decision this
                     // system can currently justify surfacing to an admin. Allow/AuditOnly/Error don't.
-                    if (mappedDecisionName == "Block" && canCreateAlerts)
+                    // A stale Block (superseded by an active grant, see above) never raises one either.
+                    if (mappedDecisionName == "Block" && canCreateAlerts && !isStaleBlock)
                     {
                         _db.Alerts.Add(new Alert
                         {

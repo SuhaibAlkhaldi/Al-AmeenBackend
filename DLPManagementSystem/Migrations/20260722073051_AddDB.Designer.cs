@@ -4,6 +4,7 @@ using DLPManagementSystem.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DLPManagementSystem.Migrations
 {
     [DbContext(typeof(DLPSystemContext))]
-    partial class DLPSystemContextModelSnapshot : ModelSnapshot
+    [Migration("20260722073051_AddDB")]
+    partial class AddDB
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -570,9 +573,6 @@ namespace DLPManagementSystem.Migrations
                     b.Property<Guid?>("PermissionGrantId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("PermissionRequestId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<long?>("PolicyVersion")
                         .HasColumnType("bigint");
 
@@ -605,8 +605,6 @@ namespace DLPManagementSystem.Migrations
                     b.HasIndex("ObservedFileId");
 
                     b.HasIndex("PermissionGrantId");
-
-                    b.HasIndex("PermissionRequestId");
 
                     b.HasIndex("ReasonCodeId");
 
@@ -2698,11 +2696,6 @@ namespace DLPManagementSystem.Migrations
                         .HasForeignKey("PermissionGrantId")
                         .HasConstraintName("FK_AuditEvents_PermissionGrant");
 
-                    b.HasOne("DLPManagementSystem.Models.PermissionRequest", "PermissionRequest")
-                        .WithMany("AuditEvents")
-                        .HasForeignKey("PermissionRequestId")
-                        .HasConstraintName("FK_AuditEvents_PermissionRequest");
-
                     b.HasOne("DLPManagementSystem.Models.AuditReasonCode", "ReasonCode")
                         .WithMany("AuditEvents")
                         .HasForeignKey("ReasonCodeId")
@@ -2725,8 +2718,6 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("Organization");
 
                     b.Navigation("PermissionGrant");
-
-                    b.Navigation("PermissionRequest");
 
                     b.Navigation("ReasonCode");
                 });
@@ -3670,8 +3661,6 @@ namespace DLPManagementSystem.Migrations
 
             modelBuilder.Entity("DLPManagementSystem.Models.PermissionRequest", b =>
                 {
-                    b.Navigation("AuditEvents");
-
                     b.Navigation("PermissionGrants");
 
                     b.Navigation("PermissionRequestAttachments");

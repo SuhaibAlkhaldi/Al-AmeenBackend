@@ -304,6 +304,27 @@ namespace DLPManagementSystem.Service.Service
                 expiresAtUtc = null;
             }
 
+            // UX_PermissionGrants_Active_Subject_Action allows only one non-revoked grant per
+            // (org, actionKey, subjectType, subjectId) — this is a *non-revoked* filter, not an
+            // *active* one, so a temporary grant that simply expired (RevokedAtUtc still null)
+            // still occupies the slot. Approving a new request for the same subject+action must
+            // supersede (revoke) any such existing row first, or the insert below violates the
+            // unique index.
+            var supersededGrants = await _db.PermissionGrants
+                .Where(x => x.OrganizationId == organizationId
+                    && x.ActionKey == permissionRequest.ActionKey
+                    && x.SubjectTypeId == permissionRequest.SubjectTypeId
+                    && x.SubjectId == permissionRequest.SubjectId
+                    && x.RevokedAtUtc == null)
+                .ToListAsync(cancellationToken);
+
+            foreach (var superseded in supersededGrants)
+            {
+                superseded.RevokedAtUtc = nowUtc;
+                superseded.RevokedByUserId = reviewedByUserId;
+                superseded.RevocationReason = "Superseded by a newly approved permission request.";
+            }
+
             var grant = new PermissionGrant
             {
                 Id = Guid.NewGuid(),
