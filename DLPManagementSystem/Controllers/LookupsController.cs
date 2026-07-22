@@ -73,5 +73,12 @@ namespace DLPManagementSystem.Controllers
             var data = await _lookupsService.GetPermissionActionsAsync(cancellationToken);
             return Ok(ApiResponse<object>.SuccessResponse(data));
         }
+
+        [HttpGet("audit-decisions")]
+        public async Task<IActionResult> GetAuditDecisions(CancellationToken cancellationToken)
+        {
+            var data = await _lookupsService.GetAuditDecisionsAsync(cancellationToken);
+            return Ok(ApiResponse<object>.SuccessResponse(data));
+        }
     }
 }

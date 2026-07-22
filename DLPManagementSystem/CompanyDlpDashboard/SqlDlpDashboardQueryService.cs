@@ -182,7 +182,7 @@ ORDER BY COUNT_BIG(1) DESC;";
         CancellationToken cancellationToken)
     {
         const string sql = @"
-SELECT TOP (50)
+SELECT TOP (5)
     ae.ActionKey,
     CAST(NULL AS nvarchar(200)) AS EventType,
     ae.Username,

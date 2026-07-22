@@ -103,5 +103,14 @@ namespace DLPManagementSystem.Service.Service
                 })
                 .ToListAsync(cancellationToken);
         }
+
+        public async Task<List<LookupItemDto>> GetAuditDecisionsAsync(CancellationToken cancellationToken = default)
+        {
+            return await _db.AuditDecisions
+                .AsNoTracking()
+                .OrderBy(x => x.DisplayName)
+                .Select(x => new LookupItemDto { Id = x.Id, Name = x.DisplayName })
+                .ToListAsync(cancellationToken);
+        }
     }
 }
