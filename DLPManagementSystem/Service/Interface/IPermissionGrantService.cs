@@ -20,5 +20,11 @@ namespace DLPManagementSystem.Service.Interface
             Guid revokedByUserId,
             RevokePermissionGrantDto request,
             CancellationToken cancellationToken = default);
+
+        Task<ApiResponse<RevokeAllGrantsResultDto>> RevokeAllAsync(
+            Guid organizationId,
+            Guid revokedByUserId,
+            RevokeAllGrantsDto request,
+            CancellationToken cancellationToken = default);
     }
 }

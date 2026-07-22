@@ -126,9 +126,8 @@ namespace DLPManagementSystem.Service.Service
                 return ApiResponse<bool>.FailureResponse("Permission grant is already revoked.", "تم إلغاء منحة الصلاحية مسبقًا");
             }
 
-            grant.RevokedAtUtc = DateTimeOffset.UtcNow;
-            grant.RevokedByUserId = revokedByUserId;
-            grant.RevocationReason = request.RevocationReason;
+            var nowUtc = DateTimeOffset.UtcNow;
+            ApplyRevocation(grant, revokedByUserId, request.RevocationReason, nowUtc);
 
             await _policyVersionService.BumpAsync(
                 organizationId,
@@ -142,6 +141,64 @@ namespace DLPManagementSystem.Service.Service
             await _db.SaveChangesAsync(cancellationToken);
 
             return ApiResponse<bool>.SuccessResponse(true, "Permission grant revoked successfully.", "تم إلغاء منحة الصلاحية بنجاح");
+        }
+
+        public async Task<ApiResponse<RevokeAllGrantsResultDto>> RevokeAllAsync(
+            Guid organizationId,
+            Guid revokedByUserId,
+            RevokeAllGrantsDto request,
+            CancellationToken cancellationToken = default)
+        {
+            var nowUtc = DateTimeOffset.UtcNow;
+
+            var candidates = await _db.PermissionGrants
+                .Where(x => x.OrganizationId == organizationId && x.SubjectId == request.SubjectId && x.RevokedAtUtc == null)
+                .ToListAsync(cancellationToken);
+
+            var toRevoke = candidates
+                .Where(x => PermissionGrantRuntimeStatus.Compute(x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, nowUtc) is "Active" or "Pending")
+                .ToList();
+
+            if (toRevoke.Count == 0)
+            {
+                return ApiResponse<RevokeAllGrantsResultDto>.FailureResponse(
+                    "No active or pending permission grants were found for this subject.",
+                    "لا توجد منح صلاحيات نشطة أو معلقة لهذا الموضوع");
+            }
+
+            foreach (var grant in toRevoke)
+            {
+                ApplyRevocation(grant, revokedByUserId, request.RevocationReason, nowUtc);
+            }
+
+            await _policyVersionService.BumpAsync(
+                organizationId,
+                revokedByUserId,
+                "GrantsBulkRevoked",
+                "PermissionGrant",
+                null,
+                $"{toRevoke.Count} permission grant(s) revoked for subject {request.SubjectId}.",
+                cancellationToken);
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            var result = new RevokeAllGrantsResultDto
+            {
+                RevokedCount = toRevoke.Count,
+                ActionKeys = toRevoke.Select(x => x.ActionKey).ToList()
+            };
+
+            return ApiResponse<RevokeAllGrantsResultDto>.SuccessResponse(
+                result,
+                $"{toRevoke.Count} permission grant(s) revoked successfully.",
+                $"تم إلغاء {toRevoke.Count} منحة صلاحية بنجاح");
+        }
+
+        private static void ApplyRevocation(PermissionGrant grant, Guid revokedByUserId, string reason, DateTimeOffset nowUtc)
+        {
+            grant.RevokedAtUtc = nowUtc;
+            grant.RevokedByUserId = revokedByUserId;
+            grant.RevocationReason = reason;
         }
 
         private static string ComputeRuntimeStatus(PermissionGrant grant, DateTimeOffset nowUtc)

@@ -20,6 +20,7 @@ namespace DLPManagementSystem.Service.Interface
         Task<ApiResponse<PermissionRequestDto>> CreateAsync(
             Guid organizationId,
             Guid requestedByUserId,
+            int callerUserTypeId,
             CreatePermissionRequestDto request,
             CancellationToken cancellationToken = default);
 
