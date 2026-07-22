@@ -29,6 +29,7 @@ namespace DLPManagementSystem.Controllers
             [FromQuery] int pageSize = 20,
             CancellationToken cancellationToken = default)
         {
+            pageSize = PagingDefaults.ClampPageSize(pageSize);
             var organizationId = User.GetOrganizationId();
             var response = await _alertService.GetAlertsAsync(organizationId, statusId, levelId, assignedToUserId, fromUtc, toUtc, page, pageSize, cancellationToken);
             return Ok(response);

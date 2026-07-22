@@ -51,33 +51,19 @@ namespace DLPManagementSystem.Service.Service
 
             var nowUtc = DateTimeOffset.UtcNow;
 
-            int totalCount;
-            List<PermissionGrant> pageEntities;
-
             if (!string.IsNullOrWhiteSpace(status))
             {
-                // RuntimeStatus is computed at read time rather than stored, so filtering by it
-                // requires materializing all matching grants first. Org grant volume is small
-                // enough (low thousands at most) for this to be cheap.
-                var allEntities = await query.ToListAsync(cancellationToken);
-                var filtered = allEntities
-                    .Where(x => string.Equals(ComputeRuntimeStatus(x, nowUtc), status, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                // Same Active/Pending/Expired/Revoked classification PermissionGrantRuntimeStatus.Compute
+                // uses in-memory, translated to SQL so status filtering pages at the database level
+                // instead of materializing every matching grant first.
+                query = query.Where(PermissionGrantRuntimeStatus.MatchesStatus(status, nowUtc));
+            }
 
-                totalCount = filtered.Count;
-                pageEntities = filtered
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToList();
-            }
-            else
-            {
-                totalCount = await query.CountAsync(cancellationToken);
-                pageEntities = await query
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync(cancellationToken);
-            }
+            var totalCount = await query.CountAsync(cancellationToken);
+            var pageEntities = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken);
 
             var employeeSubjectIds = pageEntities
                 .Where(x => x.SubjectType.Name == "Employee" && Guid.TryParse(x.SubjectId, out _))

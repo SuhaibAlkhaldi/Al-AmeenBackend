@@ -29,6 +29,7 @@ namespace DLPManagementSystem.Controllers
             var organizationId = User.GetOrganizationId();
             var userId = User.GetUserId();
             var userTypeId = User.GetUserTypeId();
+            pageSize = PagingDefaults.ClampPageSize(pageSize);
             var response = await _permissionRequestService.GetRequestsAsync(organizationId, userId, userTypeId, statusId, requestedByEmployeeId, page, pageSize, cancellationToken);
             return Ok(response);
         }
