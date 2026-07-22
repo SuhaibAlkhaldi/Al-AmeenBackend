@@ -158,9 +158,17 @@ namespace DLPManagementSystem.Service.Service
         public async Task<ApiResponse<PermissionRequestDto>> CreateAsync(
             Guid organizationId,
             Guid requestedByUserId,
+            int callerUserTypeId,
             CreatePermissionRequestDto request,
             CancellationToken cancellationToken = default)
         {
+            if (!await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                return ApiResponse<PermissionRequestDto>.FailureResponse(
+                    "Only Employee accounts are permitted to submit permission requests.",
+                    "فقط حسابات الموظفين مخوّلة بتقديم طلبات الصلاحيات");
+            }
+
             var employee = await _db.Employees
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.UserId == requestedByUserId, cancellationToken);
 

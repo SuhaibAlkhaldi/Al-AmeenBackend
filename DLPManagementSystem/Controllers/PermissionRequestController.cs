@@ -52,7 +52,8 @@ namespace DLPManagementSystem.Controllers
         {
             var organizationId = User.GetOrganizationId();
             var userId = User.GetUserId();
-            var response = await _permissionRequestService.CreateAsync(organizationId, userId, request, cancellationToken);
+            var userTypeId = User.GetUserTypeId();
+            var response = await _permissionRequestService.CreateAsync(organizationId, userId, userTypeId, request, cancellationToken);
 
             if (!response.Success)
             {

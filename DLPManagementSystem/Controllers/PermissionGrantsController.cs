@@ -47,5 +47,21 @@ namespace DLPManagementSystem.Controllers
 
             return Ok(response);
         }
+
+        [HttpPost("revoke-all")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin")]
+        public async Task<IActionResult> RevokeAll([FromBody] RevokeAllGrantsDto request, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var userId = User.GetUserId();
+            var response = await _permissionGrantService.RevokeAllAsync(organizationId, userId, request, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
     }
 }
