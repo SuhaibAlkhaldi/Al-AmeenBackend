@@ -31,5 +31,7 @@ namespace DLPManagementSystem.DTO.AuditEvents
         public string? ReasonCodeDisplayName { get; set; }
 
         public long? PolicyVersion { get; set; }
+
+        public string? Details { get; set; }
     }
 }

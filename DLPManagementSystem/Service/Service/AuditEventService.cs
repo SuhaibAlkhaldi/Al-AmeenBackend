@@ -1,4 +1,5 @@
 using DLPManagementSystem.Common;
+using DLPManagementSystem.CompanyDlpDashboard;
 using DLPManagementSystem.DTO.AuditEvents;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
@@ -89,9 +90,15 @@ namespace DLPManagementSystem.Service.Service
                     DecisionDisplayName = x.Decision.DisplayName,
                     ReasonCodeId = x.ReasonCodeId,
                     ReasonCodeDisplayName = x.ReasonCode != null ? x.ReasonCode.DisplayName : null,
-                    PolicyVersion = x.PolicyVersion
+                    PolicyVersion = x.PolicyVersion,
+                    Details = x.MetadataJson
                 })
                 .ToListAsync(cancellationToken);
+
+            foreach (var item in items)
+            {
+                item.Details = DlpMetadataDetailsBuilder.Build(item.Details);
+            }
 
             var result = new PagedResultDto<AuditEventListItemDto>
             {

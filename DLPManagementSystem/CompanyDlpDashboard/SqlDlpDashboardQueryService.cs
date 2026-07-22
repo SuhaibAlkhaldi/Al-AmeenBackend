@@ -184,7 +184,7 @@ ORDER BY COUNT_BIG(1) DESC;";
         const string sql = @"
 SELECT TOP (5)
     ae.ActionKey,
-    CAST(NULL AS nvarchar(200)) AS EventType,
+    aet.DisplayName AS EventType,
     ae.Username,
     ae.UserSid,
     CONVERT(nvarchar(50), ae.DeviceId) AS DeviceId,
@@ -195,6 +195,7 @@ SELECT TOP (5)
     ae.OccurredAtUtc,
     ae.ReceivedAtUtc
 FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditEventTypes aet ON aet.Id = ae.EventTypeId
 LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
 LEFT JOIN dbo.AuditReasonCodes arc ON arc.Id = ae.ReasonCodeId
 WHERE ae.ReceivedAtUtc >= @FromUtc
