@@ -67,6 +67,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IDeviceService, DeviceService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 builder.Services.AddScoped<IAlertService, AlertService>();
+builder.Services.AddScoped<IAuditEventService, AuditEventService>();
 builder.Services.AddScoped<IPermissionRequestService, PermissionRequestService>();
 builder.Services.AddScoped<IPermissionGrantService, PermissionGrantService>();
 builder.Services.AddScoped<IFileClassificationService, FileClassificationService>();

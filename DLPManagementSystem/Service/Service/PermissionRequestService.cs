@@ -199,9 +199,9 @@ namespace DLPManagementSystem.Service.Service
                 subjectTypeId = await _lookupService.GetPermissionSubjectTypeId("Employee", cancellationToken);
                 statusId = await _lookupService.GetPermissionRequestStatusId("Submitted", cancellationToken);
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException)
             {
-                return ApiResponse<PermissionRequestDto>.FailureResponse(ex.Message, "بيانات مرجعية مطلوبة غير موجودة");
+                return ApiResponse<PermissionRequestDto>.FailureResponse("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
             }
 
             var nowUtc = DateTimeOffset.UtcNow;
@@ -266,9 +266,9 @@ namespace DLPManagementSystem.Service.Service
                 approvedStatusId = await _lookupService.GetPermissionRequestStatusId("Approved", cancellationToken);
                 approvedReviewDecisionId = await _lookupService.GetPermissionRequestReviewDecisionId("Approved", cancellationToken);
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException)
             {
-                return ApiResponse<PermissionRequestDto>.FailureResponse(ex.Message, "بيانات مرجعية مطلوبة غير موجودة");
+                return ApiResponse<PermissionRequestDto>.FailureResponse("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
             }
 
             int grantTypeId;
@@ -280,9 +280,9 @@ namespace DLPManagementSystem.Service.Service
                 {
                     grantTypeId = await _lookupService.GetPermissionGrantTypeId(request.GrantType, cancellationToken);
                 }
-                catch (InvalidOperationException ex)
+                catch (InvalidOperationException)
                 {
-                    return ApiResponse<PermissionRequestDto>.FailureResponse(ex.Message, "بيانات مرجعية مطلوبة غير موجودة");
+                    return ApiResponse<PermissionRequestDto>.FailureResponse("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
                 }
 
                 grantTypeName = request.GrantType;
@@ -386,9 +386,9 @@ namespace DLPManagementSystem.Service.Service
                 rejectedStatusId = await _lookupService.GetPermissionRequestStatusId("Rejected", cancellationToken);
                 rejectedReviewDecisionId = await _lookupService.GetPermissionRequestReviewDecisionId("Rejected", cancellationToken);
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException)
             {
-                return ApiResponse<PermissionRequestDto>.FailureResponse(ex.Message, "بيانات مرجعية مطلوبة غير موجودة");
+                return ApiResponse<PermissionRequestDto>.FailureResponse("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
             }
 
             var nowUtc = DateTimeOffset.UtcNow;
