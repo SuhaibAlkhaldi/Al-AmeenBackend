@@ -129,8 +129,7 @@ namespace DLPManagementSystem.Service.Service
                     x.Reason,
                     GrantedByName = x.GrantedByUser.FullName,
                     x.CreatedAtUtc,
-                    x.RevokedAtUtc,
-                    x.SourcePermissionRequestId
+                    x.RevokedAtUtc
                 })
                 .ToListAsync(cancellationToken);
 
@@ -151,8 +150,7 @@ namespace DLPManagementSystem.Service.Service
                     GrantedBy = g.GrantedByName,
                     CreatedAtUtc = g.CreatedAtUtc,
                     RevokedAtUtc = null,
-                    RevokedBy = null,
-                    SourcePermissionRequestId = g.SourcePermissionRequestId
+                    RevokedBy = null
                 })
                 .ToList();
         }

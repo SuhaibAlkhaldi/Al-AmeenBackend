@@ -86,7 +86,6 @@
         public DateTimeOffset CreatedAtUtc { get; set; }
         public DateTimeOffset? RevokedAtUtc { get; set; }
         public string? RevokedBy { get; set; }
-        public Guid? SourcePermissionRequestId { get; set; }
     }
 
     public class AgentSensitiveRuleDto

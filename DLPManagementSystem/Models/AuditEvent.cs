@@ -40,8 +40,6 @@ public partial class AuditEvent
 
     public Guid? PermissionGrantId { get; set; }
 
-    public Guid? PermissionRequestId { get; set; }
-
     public Guid? ObservedFileId { get; set; }
 
     public long? PolicyVersion { get; set; }
@@ -98,10 +96,6 @@ public partial class AuditEvent
     [ForeignKey("PermissionGrantId")]
     [InverseProperty("AuditEvents")]
     public virtual PermissionGrant? PermissionGrant { get; set; }
-
-    [ForeignKey("PermissionRequestId")]
-    [InverseProperty("AuditEvents")]
-    public virtual PermissionRequest? PermissionRequest { get; set; }
 
     [ForeignKey("ReasonCodeId")]
     [InverseProperty("AuditEvents")]
