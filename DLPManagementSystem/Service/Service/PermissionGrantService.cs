@@ -10,15 +10,19 @@ namespace DLPManagementSystem.Service.Service
     {
         private readonly DLPSystemContext _db;
         private readonly IPolicyVersionService _policyVersionService;
+        private readonly IPermissionLookupService _lookupService;
 
-        public PermissionGrantService(DLPSystemContext db, IPolicyVersionService policyVersionService)
+        public PermissionGrantService(DLPSystemContext db, IPolicyVersionService policyVersionService, IPermissionLookupService lookupService)
         {
             _db = db;
             _policyVersionService = policyVersionService;
+            _lookupService = lookupService;
         }
 
         public async Task<ApiResponse<PagedResultDto<PermissionGrantDto>>> GetGrantsAsync(
             Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
             string? subjectId,
             string? actionKey,
             string? status,
@@ -26,13 +30,37 @@ namespace DLPManagementSystem.Service.Service
             int pageSize,
             CancellationToken cancellationToken = default)
         {
+            var effectiveSubjectId = subjectId;
+
+            if (await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                // Employee-type callers can only ever see their own grants — force this regardless of
+                // whatever subjectId the client passed, mirroring PermissionRequestService.GetRequestsAsync.
+                var callerEmployee = await _db.Employees
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.UserId == callerUserId, cancellationToken);
+
+                if (callerEmployee == null)
+                {
+                    return ApiResponse<PagedResultDto<PermissionGrantDto>>.SuccessResponse(new PagedResultDto<PermissionGrantDto>
+                    {
+                        Items = new List<PermissionGrantDto>(),
+                        TotalCount = 0,
+                        Page = page,
+                        PageSize = pageSize
+                    });
+                }
+
+                effectiveSubjectId = callerEmployee.Id.ToString();
+            }
+
             var query = _db.PermissionGrants
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId);
 
-            if (!string.IsNullOrWhiteSpace(subjectId))
+            if (!string.IsNullOrWhiteSpace(effectiveSubjectId))
             {
-                query = query.Where(x => x.SubjectId == subjectId);
+                query = query.Where(x => x.SubjectId == effectiveSubjectId);
             }
 
             if (!string.IsNullOrWhiteSpace(actionKey))
@@ -178,6 +206,193 @@ namespace DLPManagementSystem.Service.Service
                 result,
                 $"{toRevoke.Count} permission grant(s) revoked successfully.",
                 $"تم إلغاء {toRevoke.Count} منحة صلاحية بنجاح");
+        }
+
+        public async Task<GrantBuildResult> BuildGrantAsync(
+            Guid organizationId,
+            string actionKey,
+            int decisionId,
+            int subjectTypeId,
+            string subjectId,
+            Guid? targetDeviceId,
+            string grantTypeName,
+            DateTimeOffset? requestedStartsAtUtc,
+            DateTimeOffset? requestedExpiresAtUtc,
+            string reason,
+            Guid grantedByUserId,
+            Guid? sourcePermissionRequestId,
+            CancellationToken cancellationToken = default)
+        {
+            int grantTypeId;
+
+            try
+            {
+                grantTypeId = await _lookupService.GetPermissionGrantTypeId(grantTypeName, cancellationToken);
+            }
+            catch (InvalidOperationException)
+            {
+                return GrantBuildResult.Failure("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
+            }
+
+            var nowUtc = DateTimeOffset.UtcNow;
+            var startsAtUtc = requestedStartsAtUtc ?? nowUtc;
+            DateTimeOffset? expiresAtUtc;
+
+            if (string.Equals(grantTypeName, "Temporary", StringComparison.OrdinalIgnoreCase))
+            {
+                expiresAtUtc = requestedExpiresAtUtc;
+
+                if (expiresAtUtc == null || expiresAtUtc <= startsAtUtc)
+                {
+                    return GrantBuildResult.Failure(
+                        "A temporary grant requires an expiry date/time in the future of its start time.",
+                        "المنحة المؤقتة تتطلب تاريخ/وقت انتهاء صلاحية بعد وقت البدء");
+                }
+            }
+            else
+            {
+                expiresAtUtc = null;
+            }
+
+            var grant = new PermissionGrant
+            {
+                Id = Guid.NewGuid(),
+                OrganizationId = organizationId,
+                ActionKey = actionKey,
+                DecisionId = decisionId,
+                SubjectTypeId = subjectTypeId,
+                SubjectId = subjectId,
+                TargetDeviceId = targetDeviceId,
+                GrantTypeId = grantTypeId,
+                Priority = 500,
+                StartsAtUtc = startsAtUtc,
+                ExpiresAtUtc = expiresAtUtc,
+                Reason = reason,
+                GrantedByUserId = grantedByUserId,
+                SourcePermissionRequestId = sourcePermissionRequestId,
+                CreatedAtUtc = nowUtc
+            };
+
+            _db.PermissionGrants.Add(grant);
+
+            return GrantBuildResult.Ok(grant);
+        }
+
+        public async Task<ApiResponse<PermissionGrantDto>> CreateDirectGrantAsync(
+            Guid organizationId,
+            Guid grantedByUserId,
+            CreatePermissionGrantDto request,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Guid.TryParse(request.SubjectId, out var employeeId))
+            {
+                return ApiResponse<PermissionGrantDto>.FailureResponse("Employee id is not valid.", "معرّف الموظف غير صالح");
+            }
+
+            var employee = await _db.Employees
+                .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == employeeId, cancellationToken);
+
+            if (employee == null)
+            {
+                return ApiResponse<PermissionGrantDto>.FailureResponse("Employee was not found.", "الموظف غير موجود");
+            }
+
+            var actionExists = await _db.PermissionActions
+                .AnyAsync(x => x.Key == request.ActionKey && x.IsEnabled, cancellationToken);
+
+            if (!actionExists)
+            {
+                return ApiResponse<PermissionGrantDto>.FailureResponse("Permission action was not found.", "إجراء الصلاحية غير موجود");
+            }
+
+            var subjectId = employee.Id.ToString();
+
+            // Guard against stacking a second overlapping grant for the same action/subject — the admin
+            // must revoke the existing one first rather than creating ambiguous, hard-to-audit duplicates.
+            var nowUtc = DateTimeOffset.UtcNow;
+            var existingGrants = await _db.PermissionGrants
+                .Where(x => x.OrganizationId == organizationId && x.SubjectId == subjectId && x.ActionKey == request.ActionKey && x.RevokedAtUtc == null)
+                .ToListAsync(cancellationToken);
+
+            var hasActiveOrPending = existingGrants
+                .Any(x => PermissionGrantRuntimeStatus.Compute(x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, nowUtc) is "Active" or "Pending");
+
+            if (hasActiveOrPending)
+            {
+                return ApiResponse<PermissionGrantDto>.FailureResponse(
+                    "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
+                    "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
+            }
+
+            int decisionId;
+            int subjectTypeId;
+
+            try
+            {
+                decisionId = await _lookupService.GetPermissionDecisionId("Allow", cancellationToken);
+                subjectTypeId = await _lookupService.GetPermissionSubjectTypeId("Employee", cancellationToken);
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResponse<PermissionGrantDto>.FailureResponse("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
+            }
+
+            var buildResult = await BuildGrantAsync(
+                organizationId,
+                request.ActionKey,
+                decisionId,
+                subjectTypeId,
+                subjectId,
+                targetDeviceId: null,
+                request.GrantType,
+                request.StartsAtUtc,
+                request.ExpiresAtUtc,
+                request.Reason,
+                grantedByUserId,
+                sourcePermissionRequestId: null,
+                cancellationToken);
+
+            if (!buildResult.Success)
+            {
+                return ApiResponse<PermissionGrantDto>.FailureResponse(buildResult.ErrorMessageEn!, buildResult.ErrorMessageAr!);
+            }
+
+            var grant = buildResult.Grant!;
+
+            await _policyVersionService.BumpAsync(
+                organizationId,
+                grantedByUserId,
+                "GrantCreatedDirect",
+                "PermissionGrant",
+                grant.Id,
+                $"Permission '{grant.ActionKey}' granted directly to subject {grant.SubjectId}.",
+                cancellationToken);
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            var savedGrant = await _db.PermissionGrants
+                .AsNoTracking()
+                .Include(x => x.Decision)
+                .Include(x => x.SubjectType)
+                .Include(x => x.GrantType)
+                .Include(x => x.GrantedByUser)
+                .Include(x => x.RevokedByUser)
+                .Include(x => x.TargetDevice)
+                .FirstAsync(x => x.Id == grant.Id, cancellationToken);
+
+            var employeeNames = new Dictionary<Guid, string> { [employee.Id] = employee.DisplayName };
+            var dto = MapToDto(savedGrant, DateTimeOffset.UtcNow, employeeNames);
+
+            return ApiResponse<PermissionGrantDto>.SuccessResponse(dto, "Permission granted successfully.", "تم منح الصلاحية بنجاح");
+        }
+
+        private async Task<bool> IsEmployeeUserTypeAsync(int userTypeId, CancellationToken cancellationToken)
+        {
+            var employeeUserType = await _db.UserTypes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Name == "Employee", cancellationToken);
+
+            return employeeUserType != null && userTypeId == employeeUserType.Id;
         }
 
         private static void ApplyRevocation(PermissionGrant grant, Guid revokedByUserId, string reason, DateTimeOffset nowUtc)

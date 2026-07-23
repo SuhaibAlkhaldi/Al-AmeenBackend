@@ -52,7 +52,8 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> CreateUser([FromBody] CreateUserDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _userService.CreateUserAsync(organizationId, request, cancellationToken);
+            var callerRoleName = User.GetRoleName();
+            var response = await _userService.CreateUserAsync(organizationId, callerRoleName, request, cancellationToken);
 
             if (!response.Success)
             {
@@ -67,7 +68,9 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _userService.UpdateUserAsync(organizationId, id, request, cancellationToken);
+            var callerUserId = User.GetUserId();
+            var callerRoleName = User.GetRoleName();
+            var response = await _userService.UpdateUserAsync(organizationId, id, callerUserId, callerRoleName, request, cancellationToken);
 
             if (!response.Success)
             {
@@ -97,7 +100,8 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> DeleteUser(Guid id, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _userService.DeleteUserAsync(organizationId, id, cancellationToken);
+            var callerUserId = User.GetUserId();
+            var response = await _userService.DeleteUserAsync(organizationId, id, callerUserId, cancellationToken);
 
             if (!response.Success)
             {

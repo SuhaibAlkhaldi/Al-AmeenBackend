@@ -55,12 +55,18 @@ namespace DLPManagementSystem.Service.Service
         private readonly DLPSystemContext _db;
         private readonly IPermissionLookupService _lookupService;
         private readonly IPolicyVersionService _policyVersionService;
+        private readonly IPermissionGrantService _permissionGrantService;
 
-        public PermissionRequestService(DLPSystemContext db, IPermissionLookupService lookupService, IPolicyVersionService policyVersionService)
+        public PermissionRequestService(
+            DLPSystemContext db,
+            IPermissionLookupService lookupService,
+            IPolicyVersionService policyVersionService,
+            IPermissionGrantService permissionGrantService)
         {
             _db = db;
             _lookupService = lookupService;
             _policyVersionService = policyVersionService;
+            _permissionGrantService = permissionGrantService;
         }
 
         public async Task<ApiResponse<PagedResultDto<PermissionRequestDto>>> GetRequestsAsync(
@@ -137,7 +143,12 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<PagedResultDto<PermissionRequestDto>>.SuccessResponse(result);
         }
 
-        public async Task<ApiResponse<PermissionRequestDto>> GetByIdAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<PermissionRequestDto>> GetByIdAsync(
+            Guid organizationId,
+            Guid id,
+            Guid callerUserId,
+            int callerUserTypeId,
+            CancellationToken cancellationToken = default)
         {
             var dto = await _db.PermissionRequests
                 .AsNoTracking()
@@ -148,6 +159,20 @@ namespace DLPManagementSystem.Service.Service
             if (dto == null)
             {
                 return ApiResponse<PermissionRequestDto>.FailureResponse("Permission request was not found.", "طلب الصلاحية غير موجود");
+            }
+
+            if (await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                // Employee-type callers may only view their own request — same restriction GetRequestsAsync
+                // already applies to the list endpoint, mirrored here so a guessed/known GUID doesn't bypass it.
+                var callerEmployee = await _db.Employees
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.UserId == callerUserId, cancellationToken);
+
+                if (callerEmployee == null || dto.RequestedByEmployeeId != callerEmployee.Id)
+                {
+                    return ApiResponse<PermissionRequestDto>.FailureResponse("Permission request was not found.", "طلب الصلاحية غير موجود");
+                }
             }
 
             PopulateGrantRuntimeStatus(dto, DateTimeOffset.UtcNow);
@@ -229,7 +254,7 @@ namespace DLPManagementSystem.Service.Service
             _db.PermissionRequests.Add(permissionRequest);
             await _db.SaveChangesAsync(cancellationToken);
 
-            return await GetByIdAsync(organizationId, permissionRequest.Id, cancellationToken);
+            return await GetByIdAsync(organizationId, permissionRequest.Id, requestedByUserId, callerUserTypeId, cancellationToken);
         }
 
         public async Task<ApiResponse<PermissionRequestDto>> ApproveAsync(
@@ -271,67 +296,33 @@ namespace DLPManagementSystem.Service.Service
                 return ApiResponse<PermissionRequestDto>.FailureResponse("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
             }
 
-            int grantTypeId;
-            string grantTypeName;
+            var grantTypeName = !string.IsNullOrWhiteSpace(request.GrantType)
+                ? request.GrantType
+                : permissionRequest.RequestedGrantType.Name;
 
-            if (!string.IsNullOrWhiteSpace(request.GrantType))
+            // Shared with the admin direct-grant path (PermissionGrantService.BuildGrantAsync) so both ways of
+            // creating a PermissionGrant enforce identical validation and can never drift apart.
+            var buildResult = await _permissionGrantService.BuildGrantAsync(
+                organizationId,
+                permissionRequest.ActionKey,
+                permissionRequest.RequestedDecisionId,
+                permissionRequest.SubjectTypeId,
+                permissionRequest.SubjectId,
+                permissionRequest.TargetDeviceId,
+                grantTypeName,
+                request.StartsAtUtc ?? permissionRequest.RequestedStartsAtUtc,
+                request.ExpiresAtUtc ?? permissionRequest.RequestedExpiresAtUtc,
+                permissionRequest.BusinessJustification,
+                reviewedByUserId,
+                permissionRequest.Id,
+                cancellationToken);
+
+            if (!buildResult.Success)
             {
-                try
-                {
-                    grantTypeId = await _lookupService.GetPermissionGrantTypeId(request.GrantType, cancellationToken);
-                }
-                catch (InvalidOperationException)
-                {
-                    return ApiResponse<PermissionRequestDto>.FailureResponse("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
-                }
-
-                grantTypeName = request.GrantType;
-            }
-            else
-            {
-                grantTypeId = permissionRequest.RequestedGrantTypeId;
-                grantTypeName = permissionRequest.RequestedGrantType.Name;
-            }
-
-            var startsAtUtc = request.StartsAtUtc ?? permissionRequest.RequestedStartsAtUtc ?? nowUtc;
-            DateTimeOffset? expiresAtUtc;
-
-            if (string.Equals(grantTypeName, "Temporary", StringComparison.OrdinalIgnoreCase))
-            {
-                expiresAtUtc = request.ExpiresAtUtc ?? permissionRequest.RequestedExpiresAtUtc;
-
-                if (expiresAtUtc == null || expiresAtUtc <= startsAtUtc)
-                {
-                    return ApiResponse<PermissionRequestDto>.FailureResponse(
-                        "A temporary grant requires an expiry date/time in the future of its start time.",
-                        "المنحة المؤقتة تتطلب تاريخ/وقت انتهاء صلاحية بعد وقت البدء");
-                }
-            }
-            else
-            {
-                expiresAtUtc = null;
+                return ApiResponse<PermissionRequestDto>.FailureResponse(buildResult.ErrorMessageEn!, buildResult.ErrorMessageAr!);
             }
 
-            var grant = new PermissionGrant
-            {
-                Id = Guid.NewGuid(),
-                OrganizationId = organizationId,
-                ActionKey = permissionRequest.ActionKey,
-                DecisionId = permissionRequest.RequestedDecisionId,
-                SubjectTypeId = permissionRequest.SubjectTypeId,
-                SubjectId = permissionRequest.SubjectId,
-                TargetDeviceId = permissionRequest.TargetDeviceId,
-                GrantTypeId = grantTypeId,
-                Priority = 500,
-                StartsAtUtc = startsAtUtc,
-                ExpiresAtUtc = expiresAtUtc,
-                Reason = permissionRequest.BusinessJustification,
-                GrantedByUserId = reviewedByUserId,
-                SourcePermissionRequestId = permissionRequest.Id,
-                CreatedAtUtc = nowUtc
-            };
-
-            _db.PermissionGrants.Add(grant);
+            var grant = buildResult.Grant!;
 
             permissionRequest.StatusId = approvedStatusId;
             permissionRequest.ReviewDecisionId = approvedReviewDecisionId;
@@ -352,7 +343,7 @@ namespace DLPManagementSystem.Service.Service
 
             await _db.SaveChangesAsync(cancellationToken);
 
-            return await GetByIdAsync(organizationId, id, cancellationToken);
+            return await GetByIdAsync(organizationId, id, reviewedByUserId, callerUserTypeId, cancellationToken);
         }
 
         public async Task<ApiResponse<PermissionRequestDto>> RejectAsync(
@@ -402,7 +393,7 @@ namespace DLPManagementSystem.Service.Service
 
             await _db.SaveChangesAsync(cancellationToken);
 
-            return await GetByIdAsync(organizationId, id, cancellationToken);
+            return await GetByIdAsync(organizationId, id, reviewedByUserId, callerUserTypeId, cancellationToken);
         }
 
         private async Task<bool> IsEmployeeUserTypeAsync(int userTypeId, CancellationToken cancellationToken)

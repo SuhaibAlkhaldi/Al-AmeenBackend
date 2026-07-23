@@ -8,5 +8,7 @@ namespace DLPManagementSystem.Service.Interface
         Task<ApiResponse<LoginResponseDto>> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default);
 
         Task<ApiResponse<AuthUserDto>> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+        Task<ApiResponse<bool>> ChangePasswordAsync(Guid userId, ChangePasswordDto request, CancellationToken cancellationToken = default);
     }
 }

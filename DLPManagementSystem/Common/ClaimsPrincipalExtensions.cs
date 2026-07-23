@@ -22,6 +22,11 @@ namespace DLPManagementSystem.Common
             return int.TryParse(value, out var roleId) ? roleId : 0;
         }
 
+        public static string GetRoleName(this ClaimsPrincipal user)
+        {
+            return user.FindFirstValue("role") ?? string.Empty;
+        }
+
         public static Guid GetDeviceId(this ClaimsPrincipal user)
         {
             var value = user.FindFirstValue("deviceId");

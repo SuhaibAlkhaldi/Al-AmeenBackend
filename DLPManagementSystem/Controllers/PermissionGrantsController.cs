@@ -29,7 +29,25 @@ namespace DLPManagementSystem.Controllers
         {
             pageSize = PagingDefaults.ClampPageSize(pageSize);
             var organizationId = User.GetOrganizationId();
-            var response = await _permissionGrantService.GetGrantsAsync(organizationId, subjectId, actionKey, status, page, pageSize, cancellationToken);
+            var userId = User.GetUserId();
+            var userTypeId = User.GetUserTypeId();
+            var response = await _permissionGrantService.GetGrantsAsync(organizationId, userId, userTypeId, subjectId, actionKey, status, page, pageSize, cancellationToken);
+            return Ok(response);
+        }
+
+        [HttpPost]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin")]
+        public async Task<IActionResult> CreateGrant([FromBody] CreatePermissionGrantDto request, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var userId = User.GetUserId();
+            var response = await _permissionGrantService.CreateDirectGrantAsync(organizationId, userId, request, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
             return Ok(response);
         }
 

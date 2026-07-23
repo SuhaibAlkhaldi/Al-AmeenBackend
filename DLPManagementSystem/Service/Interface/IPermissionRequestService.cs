@@ -15,7 +15,12 @@ namespace DLPManagementSystem.Service.Interface
             int pageSize,
             CancellationToken cancellationToken = default);
 
-        Task<ApiResponse<PermissionRequestDto>> GetByIdAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default);
+        Task<ApiResponse<PermissionRequestDto>> GetByIdAsync(
+            Guid organizationId,
+            Guid id,
+            Guid callerUserId,
+            int callerUserTypeId,
+            CancellationToken cancellationToken = default);
 
         Task<ApiResponse<PermissionRequestDto>> CreateAsync(
             Guid organizationId,
