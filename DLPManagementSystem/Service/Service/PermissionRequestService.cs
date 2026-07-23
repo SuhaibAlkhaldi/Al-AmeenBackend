@@ -137,7 +137,12 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<PagedResultDto<PermissionRequestDto>>.SuccessResponse(result);
         }
 
-        public async Task<ApiResponse<PermissionRequestDto>> GetByIdAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<PermissionRequestDto>> GetByIdAsync(
+            Guid organizationId,
+            Guid id,
+            Guid callerUserId,
+            int callerUserTypeId,
+            CancellationToken cancellationToken = default)
         {
             var dto = await _db.PermissionRequests
                 .AsNoTracking()
@@ -148,6 +153,20 @@ namespace DLPManagementSystem.Service.Service
             if (dto == null)
             {
                 return ApiResponse<PermissionRequestDto>.FailureResponse("Permission request was not found.", "طلب الصلاحية غير موجود");
+            }
+
+            if (await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                // Employee-type callers may only view their own request — same restriction GetRequestsAsync
+                // already applies to the list endpoint, mirrored here so a guessed/known GUID doesn't bypass it.
+                var callerEmployee = await _db.Employees
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.UserId == callerUserId, cancellationToken);
+
+                if (callerEmployee == null || dto.RequestedByEmployeeId != callerEmployee.Id)
+                {
+                    return ApiResponse<PermissionRequestDto>.FailureResponse("Permission request was not found.", "طلب الصلاحية غير موجود");
+                }
             }
 
             PopulateGrantRuntimeStatus(dto, DateTimeOffset.UtcNow);
@@ -229,7 +248,7 @@ namespace DLPManagementSystem.Service.Service
             _db.PermissionRequests.Add(permissionRequest);
             await _db.SaveChangesAsync(cancellationToken);
 
-            return await GetByIdAsync(organizationId, permissionRequest.Id, cancellationToken);
+            return await GetByIdAsync(organizationId, permissionRequest.Id, requestedByUserId, callerUserTypeId, cancellationToken);
         }
 
         public async Task<ApiResponse<PermissionRequestDto>> ApproveAsync(
@@ -352,7 +371,7 @@ namespace DLPManagementSystem.Service.Service
 
             await _db.SaveChangesAsync(cancellationToken);
 
-            return await GetByIdAsync(organizationId, id, cancellationToken);
+            return await GetByIdAsync(organizationId, id, reviewedByUserId, callerUserTypeId, cancellationToken);
         }
 
         public async Task<ApiResponse<PermissionRequestDto>> RejectAsync(
@@ -402,7 +421,7 @@ namespace DLPManagementSystem.Service.Service
 
             await _db.SaveChangesAsync(cancellationToken);
 
-            return await GetByIdAsync(organizationId, id, cancellationToken);
+            return await GetByIdAsync(organizationId, id, reviewedByUserId, callerUserTypeId, cancellationToken);
         }
 
         private async Task<bool> IsEmployeeUserTypeAsync(int userTypeId, CancellationToken cancellationToken)

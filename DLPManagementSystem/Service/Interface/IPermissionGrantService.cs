@@ -7,6 +7,8 @@ namespace DLPManagementSystem.Service.Interface
     {
         Task<ApiResponse<PagedResultDto<PermissionGrantDto>>> GetGrantsAsync(
             Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
             string? subjectId,
             string? actionKey,
             string? status,

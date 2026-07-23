@@ -19,6 +19,8 @@ namespace DLPManagementSystem.Service.Service
 
         public async Task<ApiResponse<PagedResultDto<PermissionGrantDto>>> GetGrantsAsync(
             Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
             string? subjectId,
             string? actionKey,
             string? status,
@@ -26,13 +28,37 @@ namespace DLPManagementSystem.Service.Service
             int pageSize,
             CancellationToken cancellationToken = default)
         {
+            var effectiveSubjectId = subjectId;
+
+            if (await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                // Employee-type callers can only ever see their own grants — force this regardless of
+                // whatever subjectId the client passed, mirroring PermissionRequestService.GetRequestsAsync.
+                var callerEmployee = await _db.Employees
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.UserId == callerUserId, cancellationToken);
+
+                if (callerEmployee == null)
+                {
+                    return ApiResponse<PagedResultDto<PermissionGrantDto>>.SuccessResponse(new PagedResultDto<PermissionGrantDto>
+                    {
+                        Items = new List<PermissionGrantDto>(),
+                        TotalCount = 0,
+                        Page = page,
+                        PageSize = pageSize
+                    });
+                }
+
+                effectiveSubjectId = callerEmployee.Id.ToString();
+            }
+
             var query = _db.PermissionGrants
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId);
 
-            if (!string.IsNullOrWhiteSpace(subjectId))
+            if (!string.IsNullOrWhiteSpace(effectiveSubjectId))
             {
-                query = query.Where(x => x.SubjectId == subjectId);
+                query = query.Where(x => x.SubjectId == effectiveSubjectId);
             }
 
             if (!string.IsNullOrWhiteSpace(actionKey))
@@ -178,6 +204,15 @@ namespace DLPManagementSystem.Service.Service
                 result,
                 $"{toRevoke.Count} permission grant(s) revoked successfully.",
                 $"تم إلغاء {toRevoke.Count} منحة صلاحية بنجاح");
+        }
+
+        private async Task<bool> IsEmployeeUserTypeAsync(int userTypeId, CancellationToken cancellationToken)
+        {
+            var employeeUserType = await _db.UserTypes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Name == "Employee", cancellationToken);
+
+            return employeeUserType != null && userTypeId == employeeUserType.Id;
         }
 
         private static void ApplyRevocation(PermissionGrant grant, Guid revokedByUserId, string reason, DateTimeOffset nowUtc)

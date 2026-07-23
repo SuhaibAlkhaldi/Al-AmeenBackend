@@ -99,8 +99,14 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<UserDetailDto>.SuccessResponse(dto);
         }
 
-        public async Task<ApiResponse<UserDetailDto>> CreateUserAsync(Guid organizationId, CreateUserDto request, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<UserDetailDto>> CreateUserAsync(Guid organizationId, string callerRoleName, CreateUserDto request, CancellationToken cancellationToken = default)
         {
+            var elevationCheck = await CheckElevationAttemptAsync(callerRoleName, request.RoleId, cancellationToken);
+            if (elevationCheck != null)
+            {
+                return elevationCheck;
+            }
+
             var emailExists = await _db.Users
                 .AnyAsync(x => x.OrganizationId == organizationId && x.Email == request.Email, cancellationToken);
 
@@ -200,14 +206,31 @@ namespace DLPManagementSystem.Service.Service
             return null;
         }
 
-        public async Task<ApiResponse<UserDetailDto>> UpdateUserAsync(Guid organizationId, Guid id, UpdateUserDto request, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<UserDetailDto>> UpdateUserAsync(Guid organizationId, Guid id, Guid callerUserId, string callerRoleName, UpdateUserDto request, CancellationToken cancellationToken = default)
         {
+            var elevationCheck = await CheckElevationAttemptAsync(callerRoleName, request.RoleId, cancellationToken);
+            if (elevationCheck != null)
+            {
+                return elevationCheck;
+            }
+
             var user = await _db.Users
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
             if (user == null)
             {
                 return ApiResponse<UserDetailDto>.FailureResponse("User was not found.", "المستخدم غير موجود");
+            }
+
+            if (id == callerUserId)
+            {
+                var targetStatus = await _db.UserStatuses.FirstOrDefaultAsync(x => x.Id == request.StatusId, cancellationToken);
+                if (targetStatus != null && !string.Equals(targetStatus.Name, "Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    return ApiResponse<UserDetailDto>.FailureResponse(
+                        "You cannot disable or deactivate your own account.",
+                        "لا يمكنك تعطيل أو إلغاء تفعيل حسابك الخاص");
+                }
             }
 
             user.FullName = request.FullName;
@@ -238,8 +261,15 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<bool>.SuccessResponse(true, "Password reset successfully.", "تم إعادة تعيين كلمة المرور بنجاح");
         }
 
-        public async Task<ApiResponse<bool>> DeleteUserAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<bool>> DeleteUserAsync(Guid organizationId, Guid id, Guid callerUserId, CancellationToken cancellationToken = default)
         {
+            if (id == callerUserId)
+            {
+                return ApiResponse<bool>.FailureResponse(
+                    "You cannot disable your own account.",
+                    "لا يمكنك تعطيل حسابك الخاص");
+            }
+
             var user = await _db.Users
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
@@ -260,6 +290,29 @@ namespace DLPManagementSystem.Service.Service
             await _db.SaveChangesAsync(cancellationToken);
 
             return ApiResponse<bool>.SuccessResponse(true, "User disabled successfully.", "تم تعطيل المستخدم بنجاح");
+        }
+
+        private async Task<ApiResponse<UserDetailDto>?> CheckElevationAttemptAsync(string callerRoleName, int targetRoleId, CancellationToken cancellationToken)
+        {
+            // HelpDesk can create/edit accounts but must never be able to hand out SuperAdmin/SecurityAdmin
+            // privileges it doesn't itself have — SuperAdmin remains unrestricted and can assign any role.
+            if (!string.Equals(callerRoleName, "HelpDesk", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var targetRole = await _db.Roles.FirstOrDefaultAsync(x => x.Id == targetRoleId, cancellationToken);
+
+            if (targetRole != null &&
+                (string.Equals(targetRole.Name, "SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(targetRole.Name, "SecurityAdmin", StringComparison.OrdinalIgnoreCase)))
+            {
+                return ApiResponse<UserDetailDto>.FailureResponse(
+                    "HelpDesk accounts are not permitted to assign the SuperAdmin or SecurityAdmin role.",
+                    "حسابات الدعم الفني غير مخوّلة لمنح صلاحية المسؤول الأعلى أو مسؤول الأمان");
+            }
+
+            return null;
         }
 
         private static UserDetailDto MapToDetail(User user, Guid? employeeId, string? employeeName)

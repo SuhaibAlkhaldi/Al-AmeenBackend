@@ -38,7 +38,9 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _permissionRequestService.GetByIdAsync(organizationId, id, cancellationToken);
+            var userId = User.GetUserId();
+            var userTypeId = User.GetUserTypeId();
+            var response = await _permissionRequestService.GetByIdAsync(organizationId, id, userId, userTypeId, cancellationToken);
 
             if (!response.Success)
             {

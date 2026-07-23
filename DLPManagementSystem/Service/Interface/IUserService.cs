@@ -16,12 +16,12 @@ namespace DLPManagementSystem.Service.Interface
 
         Task<ApiResponse<UserDetailDto>> GetUserByIdAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default);
 
-        Task<ApiResponse<UserDetailDto>> CreateUserAsync(Guid organizationId, CreateUserDto request, CancellationToken cancellationToken = default);
+        Task<ApiResponse<UserDetailDto>> CreateUserAsync(Guid organizationId, string callerRoleName, CreateUserDto request, CancellationToken cancellationToken = default);
 
-        Task<ApiResponse<UserDetailDto>> UpdateUserAsync(Guid organizationId, Guid id, UpdateUserDto request, CancellationToken cancellationToken = default);
+        Task<ApiResponse<UserDetailDto>> UpdateUserAsync(Guid organizationId, Guid id, Guid callerUserId, string callerRoleName, UpdateUserDto request, CancellationToken cancellationToken = default);
 
         Task<ApiResponse<bool>> ResetPasswordAsync(Guid organizationId, Guid id, ResetPasswordDto request, CancellationToken cancellationToken = default);
 
-        Task<ApiResponse<bool>> DeleteUserAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default);
+        Task<ApiResponse<bool>> DeleteUserAsync(Guid organizationId, Guid id, Guid callerUserId, CancellationToken cancellationToken = default);
     }
 }

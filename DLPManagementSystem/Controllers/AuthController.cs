@@ -45,5 +45,19 @@ namespace DLPManagementSystem.Controllers
 
             return Ok(response);
         }
+
+        [HttpPost("change-password")]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto request, CancellationToken cancellationToken)
+        {
+            var userId = User.GetUserId();
+            var response = await _authService.ChangePasswordAsync(userId, request, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
     }
 }

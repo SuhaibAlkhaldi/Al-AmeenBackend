@@ -80,6 +80,30 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<AuthUserDto>.SuccessResponse(MapToAuthUserDto(user));
         }
 
+        public async Task<ApiResponse<bool>> ChangePasswordAsync(Guid userId, ChangePasswordDto request, CancellationToken cancellationToken = default)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
+
+            if (user == null)
+            {
+                return ApiResponse<bool>.FailureResponse("User was not found.", "المستخدم غير موجود");
+            }
+
+            if (user.PasswordHash != SecurityHashHelper.Sha256(request.CurrentPassword))
+            {
+                return ApiResponse<bool>.FailureResponse(
+                    "Current password is incorrect.",
+                    "كلمة المرور الحالية غير صحيحة");
+            }
+
+            user.PasswordHash = SecurityHashHelper.Sha256(request.NewPassword);
+            user.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            return ApiResponse<bool>.SuccessResponse(true, "Password changed successfully.", "تم تغيير كلمة المرور بنجاح");
+        }
+
         private static AuthUserDto MapToAuthUserDto(User user)
         {
             return new AuthUserDto
