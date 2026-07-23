@@ -15,6 +15,17 @@ namespace DLPManagementSystem.Service.Interface
             int pageSize,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Count of requests still awaiting a decision (Submitted/UnderReview) — org-wide for Admin-type
+        /// callers, scoped to the caller's own requests for Employee-type callers (same scoping rule as
+        /// <see cref="GetRequestsAsync"/>). Cheap by design: no paging, no DTO projection, just a count.
+        /// </summary>
+        Task<ApiResponse<int>> GetPendingCountAsync(
+            Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
+            CancellationToken cancellationToken = default);
+
         Task<ApiResponse<PermissionRequestDto>> GetByIdAsync(
             Guid organizationId,
             Guid id,

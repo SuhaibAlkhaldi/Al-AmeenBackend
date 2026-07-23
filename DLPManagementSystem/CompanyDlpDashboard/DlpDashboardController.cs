@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using DLPManagementSystem.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DLPManagementSystem.CompanyDlpDashboard;
@@ -21,7 +22,8 @@ public sealed class DlpDashboardController : ControllerBase
         [FromQuery] DateTimeOffset? toUtc,
         CancellationToken cancellationToken)
     {
-        var summary = await _dashboardQueryService.GetSummaryAsync(fromUtc, toUtc, cancellationToken);
+        var organizationId = User.GetOrganizationId();
+        var summary = await _dashboardQueryService.GetSummaryAsync(organizationId, fromUtc, toUtc, cancellationToken);
         return Ok(summary);
     }
 }

@@ -223,6 +223,26 @@ namespace DLPManagementSystem.Service.Service
             Guid? sourcePermissionRequestId,
             CancellationToken cancellationToken = default)
         {
+            var nowUtc = DateTimeOffset.UtcNow;
+
+            // Guard against stacking a second overlapping grant for the same action/subject — lives here
+            // (rather than in each caller) so every current and future path into a grant creation gets this
+            // protection automatically. The subject must be revoked first rather than creating ambiguous,
+            // hard-to-audit duplicates.
+            var existingGrants = await _db.PermissionGrants
+                .Where(x => x.OrganizationId == organizationId && x.SubjectId == subjectId && x.ActionKey == actionKey && x.RevokedAtUtc == null)
+                .ToListAsync(cancellationToken);
+
+            var hasActiveOrPending = existingGrants
+                .Any(x => PermissionGrantRuntimeStatus.Compute(x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, nowUtc) is "Active" or "Pending");
+
+            if (hasActiveOrPending)
+            {
+                return GrantBuildResult.Failure(
+                    "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
+                    "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
+            }
+
             int grantTypeId;
 
             try
@@ -234,7 +254,6 @@ namespace DLPManagementSystem.Service.Service
                 return GrantBuildResult.Failure("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
             }
 
-            var nowUtc = DateTimeOffset.UtcNow;
             var startsAtUtc = requestedStartsAtUtc ?? nowUtc;
             DateTimeOffset? expiresAtUtc;
 
@@ -307,23 +326,8 @@ namespace DLPManagementSystem.Service.Service
 
             var subjectId = employee.Id.ToString();
 
-            // Guard against stacking a second overlapping grant for the same action/subject — the admin
-            // must revoke the existing one first rather than creating ambiguous, hard-to-audit duplicates.
-            var nowUtc = DateTimeOffset.UtcNow;
-            var existingGrants = await _db.PermissionGrants
-                .Where(x => x.OrganizationId == organizationId && x.SubjectId == subjectId && x.ActionKey == request.ActionKey && x.RevokedAtUtc == null)
-                .ToListAsync(cancellationToken);
-
-            var hasActiveOrPending = existingGrants
-                .Any(x => PermissionGrantRuntimeStatus.Compute(x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, nowUtc) is "Active" or "Pending");
-
-            if (hasActiveOrPending)
-            {
-                return ApiResponse<PermissionGrantDto>.FailureResponse(
-                    "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
-                    "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
-            }
-
+            // Duplicate-active-grant check now lives inside BuildGrantAsync itself, so it applies here
+            // automatically without a separate check.
             int decisionId;
             int subjectTypeId;
 
@@ -368,7 +372,16 @@ namespace DLPManagementSystem.Service.Service
                 $"Permission '{grant.ActionKey}' granted directly to subject {grant.SubjectId}.",
                 cancellationToken);
 
-            await _db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (DbExceptionHelper.IsUniqueConstraintViolation(ex))
+            {
+                return ApiResponse<PermissionGrantDto>.FailureResponse(
+                    "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
+                    "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
+            }
 
             var savedGrant = await _db.PermissionGrants
                 .AsNoTracking()
