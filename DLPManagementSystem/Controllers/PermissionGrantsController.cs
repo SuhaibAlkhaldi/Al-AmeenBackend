@@ -35,6 +35,22 @@ namespace DLPManagementSystem.Controllers
             return Ok(response);
         }
 
+        [HttpPost]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin")]
+        public async Task<IActionResult> CreateGrant([FromBody] CreatePermissionGrantDto request, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var userId = User.GetUserId();
+            var response = await _permissionGrantService.CreateDirectGrantAsync(organizationId, userId, request, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
+
         [HttpPost("{id:guid}/revoke")]
         [Authorize(Roles = "SuperAdmin,SecurityAdmin")]
         public async Task<IActionResult> Revoke(Guid id, [FromBody] RevokePermissionGrantDto request, CancellationToken cancellationToken)
