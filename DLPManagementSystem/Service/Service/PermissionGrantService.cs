@@ -227,20 +227,31 @@ namespace DLPManagementSystem.Service.Service
 
             // Guard against stacking a second overlapping grant for the same action/subject — lives here
             // (rather than in each caller) so every current and future path into a grant creation gets this
-            // protection automatically. The subject must be revoked first rather than creating ambiguous,
-            // hard-to-audit duplicates.
+            // protection automatically. The DB's unique index (UX_PermissionGrants_Active_Subject_Action)
+            // blocks inserting a new row whenever ANY non-revoked row exists for this subject+action —
+            // including ones that merely expired without ever being explicitly revoked — so this in-memory
+            // check must agree with that on every non-revoked row, not just Active/Pending ones.
             var existingGrants = await _db.PermissionGrants
                 .Where(x => x.OrganizationId == organizationId && x.SubjectId == subjectId && x.ActionKey == actionKey && x.RevokedAtUtc == null)
                 .ToListAsync(cancellationToken);
 
-            var hasActiveOrPending = existingGrants
-                .Any(x => PermissionGrantRuntimeStatus.Compute(x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, nowUtc) is "Active" or "Pending");
+            var blockingGrants = existingGrants
+                .Where(x => PermissionGrantRuntimeStatus.Compute(x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, nowUtc) is "Active" or "Pending")
+                .ToList();
 
-            if (hasActiveOrPending)
+            if (blockingGrants.Count > 0)
             {
                 return GrantBuildResult.Failure(
                     "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
                     "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
+            }
+
+            // Any remaining non-revoked rows here are Expired — they convey no real ongoing access, so
+            // requiring a manual "revoke the thing that already ended" step before granting again would be
+            // pure friction. Auto-clear them so the DB's unique index and this check stay in agreement.
+            foreach (var staleExpiredGrant in existingGrants)
+            {
+                ApplyRevocation(staleExpiredGrant, grantedByUserId, "Superseded by new grant.", nowUtc);
             }
 
             int grantTypeId;
