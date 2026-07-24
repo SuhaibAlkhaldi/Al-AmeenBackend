@@ -2,12 +2,15 @@ using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.Alerts;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace DLPManagementSystem.Service.Service
 {
     public class AlertService : IAlertService
     {
+        private const int MaxExportRows = 50_000;
+
         private readonly DLPSystemContext _db;
 
         public AlertService(DLPSystemContext db)
@@ -15,16 +18,13 @@ namespace DLPManagementSystem.Service.Service
             _db = db;
         }
 
-        public async Task<ApiResponse<PagedResultDto<AlertListItemDto>>> GetAlertsAsync(
+        private IQueryable<Alert> BuildFilteredQuery(
             Guid organizationId,
             int? statusId,
             int? levelId,
             Guid? assignedToUserId,
             DateTimeOffset? fromUtc,
-            DateTimeOffset? toUtc,
-            int page,
-            int pageSize,
-            CancellationToken cancellationToken = default)
+            DateTimeOffset? toUtc)
         {
             var query = _db.Alerts
                 .AsNoTracking()
@@ -54,6 +54,22 @@ namespace DLPManagementSystem.Service.Service
             {
                 query = query.Where(x => x.CreatedAtUtc <= toUtc.Value);
             }
+
+            return query;
+        }
+
+        public async Task<ApiResponse<PagedResultDto<AlertListItemDto>>> GetAlertsAsync(
+            Guid organizationId,
+            int? statusId,
+            int? levelId,
+            Guid? assignedToUserId,
+            DateTimeOffset? fromUtc,
+            DateTimeOffset? toUtc,
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken = default)
+        {
+            var query = BuildFilteredQuery(organizationId, statusId, levelId, assignedToUserId, fromUtc, toUtc);
 
             var totalCount = await query.CountAsync(cancellationToken);
 
@@ -212,6 +228,69 @@ namespace DLPManagementSystem.Service.Service
             dto.AlertStatusName = newStatus.Name;
 
             return ApiResponse<AlertListItemDto>.SuccessResponse(dto);
+        }
+
+        public async Task ExportAlertsAsync(
+            Guid organizationId,
+            int? statusId,
+            int? levelId,
+            Guid? assignedToUserId,
+            DateTimeOffset? fromUtc,
+            DateTimeOffset? toUtc,
+            HttpResponse response,
+            CancellationToken cancellationToken = default)
+        {
+            var query = BuildFilteredQuery(organizationId, statusId, levelId, assignedToUserId, fromUtc, toUtc);
+
+            var totalMatching = await query.CountAsync(cancellationToken);
+            var truncated = totalMatching > MaxExportRows;
+
+            var fileName = $"alerts-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.csv";
+            response.ContentType = "text/csv";
+            response.Headers.ContentDisposition = $"attachment; filename=\"{fileName}\"";
+            if (truncated)
+            {
+                response.Headers["X-Export-Truncated"] = "true";
+            }
+
+            await using var writer = new StreamWriter(response.Body, leaveOpen: true);
+            writer.NewLine = "\r\n";
+
+            await writer.WriteLineAsync(CsvWriterHelper.BuildRow(
+                "Title", "Level", "Status", "AssignedTo", "CreatedAtUtc", "ClosedAtUtc", "Description", "ActionKey"));
+
+            var rows = query
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .Take(MaxExportRows)
+                .Select(x => new
+                {
+                    x.Title,
+                    LevelName = x.AlertLevel.Name,
+                    StatusName = x.AlertStatus.Name,
+                    AssignedToName = x.AssignedToUser != null ? x.AssignedToUser.FullName : null,
+                    x.CreatedAtUtc,
+                    x.ClosedAtUtc,
+                    x.Description,
+                    ActionKey = x.AuditEvent.ActionKey
+                })
+                .AsAsyncEnumerable();
+
+            await foreach (var item in rows.WithCancellation(cancellationToken))
+            {
+                var row = CsvWriterHelper.BuildRow(
+                    item.Title,
+                    item.LevelName,
+                    item.StatusName,
+                    item.AssignedToName ?? string.Empty,
+                    item.CreatedAtUtc.ToString("o"),
+                    item.ClosedAtUtc?.ToString("o") ?? string.Empty,
+                    item.Description ?? string.Empty,
+                    item.ActionKey);
+
+                await writer.WriteLineAsync(row);
+            }
+
+            await writer.FlushAsync(cancellationToken);
         }
 
         private static AlertListItemDto MapToListItem(Alert alert, string? assignedToUserName)

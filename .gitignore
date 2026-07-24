@@ -7,3 +7,6 @@ obj/
 # Generated Chrome/Edge extension package + update manifest (deploy step output, not source -
 # see win-form/Al-Ameen-windows/scripts/publish.ps1 -ExtensionPrivateKeyPath)
 DLPManagementSystem/wwwroot/extensions/
+
+# Audit-events archival output (AuditRetentionWorker) - real compliance data, not source
+DLPManagementSystem/App_Data/audit-archive/

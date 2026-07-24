@@ -35,6 +35,19 @@ namespace DLPManagementSystem.Controllers
             return Ok(response);
         }
 
+        [HttpGet("export")]
+        public async Task ExportAlerts(
+            [FromQuery] int? statusId,
+            [FromQuery] int? levelId,
+            [FromQuery] Guid? assignedToUserId,
+            [FromQuery] DateTimeOffset? fromUtc,
+            [FromQuery] DateTimeOffset? toUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var organizationId = User.GetOrganizationId();
+            await _alertService.ExportAlertsAsync(organizationId, statusId, levelId, assignedToUserId, fromUtc, toUtc, Response, cancellationToken);
+        }
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetAlertById(Guid id, CancellationToken cancellationToken)
         {

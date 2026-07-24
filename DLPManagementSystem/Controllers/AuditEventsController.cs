@@ -36,5 +36,21 @@ namespace DLPManagementSystem.Controllers
                 organizationId, deviceId, employeeId, actionKey, decisionId, reasonCodeId, fromUtc, toUtc, page, pageSize, cancellationToken);
             return Ok(response);
         }
+
+        [HttpGet("export")]
+        public async Task ExportAuditEvents(
+            [FromQuery] Guid? deviceId,
+            [FromQuery] Guid? employeeId,
+            [FromQuery] string? actionKey,
+            [FromQuery] int? decisionId,
+            [FromQuery] int? reasonCodeId,
+            [FromQuery] DateTimeOffset? fromUtc,
+            [FromQuery] DateTimeOffset? toUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var organizationId = User.GetOrganizationId();
+            await _auditEventService.ExportAuditEventsAsync(
+                organizationId, deviceId, employeeId, actionKey, decisionId, reasonCodeId, fromUtc, toUtc, Response, cancellationToken);
+        }
     }
 }

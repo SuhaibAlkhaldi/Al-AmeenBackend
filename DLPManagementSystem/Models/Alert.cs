@@ -35,6 +35,8 @@ public partial class Alert
 
     public bool IsFalsePositive { get; set; }
 
+    public DateTimeOffset? EmailNotifiedAtUtc { get; set; }
+
     [ForeignKey("AlertLevelId")]
     [InverseProperty("Alerts")]
     public virtual AlertLevel AlertLevel { get; set; } = null!;
