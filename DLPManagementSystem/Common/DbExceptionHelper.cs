@@ -18,7 +18,17 @@ namespace DLPManagementSystem.Common
         /// </summary>
         public static bool IsUniqueConstraintViolation(DbUpdateException ex)
         {
-            return ex.InnerException is SqlException sqlEx && (sqlEx.Number == 2601 || sqlEx.Number == 2627);
+            return ex.InnerException is SqlException sqlEx && IsUniqueConstraintViolationErrorNumber(sqlEx.Number);
+        }
+
+        /// <summary>
+        /// The actual error-number classification, split out from <see cref="IsUniqueConstraintViolation"/>
+        /// so it can be unit-tested directly with plain integers — <see cref="SqlException"/> has no public
+        /// constructor, so a real instance can't be constructed in a test without reflection tricks.
+        /// </summary>
+        public static bool IsUniqueConstraintViolationErrorNumber(int errorNumber)
+        {
+            return errorNumber is 2601 or 2627;
         }
     }
 }
