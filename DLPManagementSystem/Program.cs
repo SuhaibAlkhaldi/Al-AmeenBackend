@@ -2,6 +2,7 @@ using DLPManagementSystem.Authentication;
 using DLPManagementSystem.Data.Seed;
 using DLPManagementSystem.Helper.Email;
 using DLPManagementSystem.Helper.Health;
+using DLPManagementSystem.Helper.Retention;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.BackgroundServices;
 using DLPManagementSystem.Service.Interface;
@@ -83,6 +84,9 @@ builder.Services.AddScoped<IEnrollmentTokenService, EnrollmentTokenService>();
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
 builder.Services.AddScoped<IAlertEmailService, AlertEmailService>();
 builder.Services.AddHostedService<AlertEmailNotificationWorker>();
+
+builder.Services.Configure<AuditRetentionOptions>(builder.Configuration.GetSection("AuditRetention"));
+builder.Services.AddHostedService<AuditRetentionWorker>();
 
 builder.Services.AddDataProtection();
 
