@@ -11,12 +11,18 @@ namespace DLPManagementSystem.Service.Service
         private readonly DLPSystemContext _db;
         private readonly IPolicyVersionService _policyVersionService;
         private readonly IPermissionLookupService _lookupService;
+        private readonly IAdminAuditLogService _adminAuditLogService;
 
-        public PermissionGrantService(DLPSystemContext db, IPolicyVersionService policyVersionService, IPermissionLookupService lookupService)
+        public PermissionGrantService(
+            DLPSystemContext db,
+            IPolicyVersionService policyVersionService,
+            IPermissionLookupService lookupService,
+            IAdminAuditLogService adminAuditLogService)
         {
             _db = db;
             _policyVersionService = policyVersionService;
             _lookupService = lookupService;
+            _adminAuditLogService = adminAuditLogService;
         }
 
         public async Task<ApiResponse<PagedResultDto<PermissionGrantDto>>> GetGrantsAsync(
@@ -152,6 +158,11 @@ namespace DLPManagementSystem.Service.Service
                 $"Permission '{grant.ActionKey}' revoked for subject {grant.SubjectId}.",
                 cancellationToken);
 
+            var targetDisplayName = await ResolveSubjectDisplayNameAsync(organizationId, grant.SubjectId, cancellationToken);
+            await _adminAuditLogService.LogAsync(
+                organizationId, revokedByUserId, "GrantRevoked", "PermissionGrant", grant.Id, targetDisplayName,
+                $"Action '{grant.ActionKey}'. Reason: {request.RevocationReason}", cancellationToken);
+
             await _db.SaveChangesAsync(cancellationToken);
 
             return ApiResponse<bool>.SuccessResponse(true, "Permission grant revoked successfully.", "تم إلغاء منحة الصلاحية بنجاح");
@@ -194,6 +205,12 @@ namespace DLPManagementSystem.Service.Service
                 $"{toRevoke.Count} permission grant(s) revoked for subject {request.SubjectId}.",
                 cancellationToken);
 
+            var bulkTargetDisplayName = await ResolveSubjectDisplayNameAsync(organizationId, request.SubjectId, cancellationToken);
+            await _adminAuditLogService.LogAsync(
+                organizationId, revokedByUserId, "GrantsBulkRevoked", "PermissionGrant", null, bulkTargetDisplayName,
+                $"{toRevoke.Count} grant(s) revoked: {string.Join(", ", toRevoke.Select(x => x.ActionKey))}. Reason: {request.RevocationReason}",
+                cancellationToken);
+
             await _db.SaveChangesAsync(cancellationToken);
 
             var result = new RevokeAllGrantsResultDto
@@ -223,6 +240,37 @@ namespace DLPManagementSystem.Service.Service
             Guid? sourcePermissionRequestId,
             CancellationToken cancellationToken = default)
         {
+            var nowUtc = DateTimeOffset.UtcNow;
+
+            // Guard against stacking a second overlapping grant for the same action/subject — lives here
+            // (rather than in each caller) so every current and future path into a grant creation gets this
+            // protection automatically. The DB's unique index (UX_PermissionGrants_Active_Subject_Action)
+            // blocks inserting a new row whenever ANY non-revoked row exists for this subject+action —
+            // including ones that merely expired without ever being explicitly revoked — so this in-memory
+            // check must agree with that on every non-revoked row, not just Active/Pending ones.
+            var existingGrants = await _db.PermissionGrants
+                .Where(x => x.OrganizationId == organizationId && x.SubjectId == subjectId && x.ActionKey == actionKey && x.RevokedAtUtc == null)
+                .ToListAsync(cancellationToken);
+
+            var blockingGrants = existingGrants
+                .Where(x => PermissionGrantRuntimeStatus.Compute(x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, nowUtc) is "Active" or "Pending")
+                .ToList();
+
+            if (blockingGrants.Count > 0)
+            {
+                return GrantBuildResult.Failure(
+                    "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
+                    "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
+            }
+
+            // Any remaining non-revoked rows here are Expired — they convey no real ongoing access, so
+            // requiring a manual "revoke the thing that already ended" step before granting again would be
+            // pure friction. Auto-clear them so the DB's unique index and this check stay in agreement.
+            foreach (var staleExpiredGrant in existingGrants)
+            {
+                ApplyRevocation(staleExpiredGrant, grantedByUserId, "Superseded by new grant.", nowUtc);
+            }
+
             int grantTypeId;
 
             try
@@ -234,7 +282,6 @@ namespace DLPManagementSystem.Service.Service
                 return GrantBuildResult.Failure("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
             }
 
-            var nowUtc = DateTimeOffset.UtcNow;
             var startsAtUtc = requestedStartsAtUtc ?? nowUtc;
             DateTimeOffset? expiresAtUtc;
 
@@ -307,23 +354,8 @@ namespace DLPManagementSystem.Service.Service
 
             var subjectId = employee.Id.ToString();
 
-            // Guard against stacking a second overlapping grant for the same action/subject — the admin
-            // must revoke the existing one first rather than creating ambiguous, hard-to-audit duplicates.
-            var nowUtc = DateTimeOffset.UtcNow;
-            var existingGrants = await _db.PermissionGrants
-                .Where(x => x.OrganizationId == organizationId && x.SubjectId == subjectId && x.ActionKey == request.ActionKey && x.RevokedAtUtc == null)
-                .ToListAsync(cancellationToken);
-
-            var hasActiveOrPending = existingGrants
-                .Any(x => PermissionGrantRuntimeStatus.Compute(x.RevokedAtUtc, x.ExpiresAtUtc, x.StartsAtUtc, nowUtc) is "Active" or "Pending");
-
-            if (hasActiveOrPending)
-            {
-                return ApiResponse<PermissionGrantDto>.FailureResponse(
-                    "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
-                    "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
-            }
-
+            // Duplicate-active-grant check now lives inside BuildGrantAsync itself, so it applies here
+            // automatically without a separate check.
             int decisionId;
             int subjectTypeId;
 
@@ -368,7 +400,20 @@ namespace DLPManagementSystem.Service.Service
                 $"Permission '{grant.ActionKey}' granted directly to subject {grant.SubjectId}.",
                 cancellationToken);
 
-            await _db.SaveChangesAsync(cancellationToken);
+            await _adminAuditLogService.LogAsync(
+                organizationId, grantedByUserId, "GrantCreated", "PermissionGrant", grant.Id, employee.DisplayName,
+                $"Action '{grant.ActionKey}', grant type '{request.GrantType}'.", cancellationToken);
+
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (DbExceptionHelper.IsUniqueConstraintViolation(ex))
+            {
+                return ApiResponse<PermissionGrantDto>.FailureResponse(
+                    "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
+                    "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
+            }
 
             var savedGrant = await _db.PermissionGrants
                 .AsNoTracking()
@@ -384,6 +429,22 @@ namespace DLPManagementSystem.Service.Service
             var dto = MapToDto(savedGrant, DateTimeOffset.UtcNow, employeeNames);
 
             return ApiResponse<PermissionGrantDto>.SuccessResponse(dto, "Permission granted successfully.", "تم منح الصلاحية بنجاح");
+        }
+
+        private async Task<string?> ResolveSubjectDisplayNameAsync(Guid organizationId, string subjectId, CancellationToken cancellationToken)
+        {
+            if (!Guid.TryParse(subjectId, out var subjectGuid))
+            {
+                return subjectId;
+            }
+
+            var employee = await _db.Employees
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.Id == subjectGuid)
+                .Select(x => x.DisplayName)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return employee ?? subjectId;
         }
 
         private async Task<bool> IsEmployeeUserTypeAsync(int userTypeId, CancellationToken cancellationToken)

@@ -34,6 +34,16 @@ namespace DLPManagementSystem.Controllers
             return Ok(response);
         }
 
+        [HttpGet("pending-count")]
+        public async Task<IActionResult> GetPendingCount(CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var userId = User.GetUserId();
+            var userTypeId = User.GetUserTypeId();
+            var response = await _permissionRequestService.GetPendingCountAsync(organizationId, userId, userTypeId, cancellationToken);
+            return Ok(response);
+        }
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {

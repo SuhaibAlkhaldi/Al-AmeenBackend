@@ -52,8 +52,9 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> CreateUser([FromBody] CreateUserDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
+            var callerUserId = User.GetUserId();
             var callerRoleName = User.GetRoleName();
-            var response = await _userService.CreateUserAsync(organizationId, callerRoleName, request, cancellationToken);
+            var response = await _userService.CreateUserAsync(organizationId, callerUserId, callerRoleName, request, cancellationToken);
 
             if (!response.Success)
             {
@@ -85,7 +86,8 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> ResetPassword(Guid id, [FromBody] ResetPasswordDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _userService.ResetPasswordAsync(organizationId, id, request, cancellationToken);
+            var callerUserId = User.GetUserId();
+            var response = await _userService.ResetPasswordAsync(organizationId, id, callerUserId, request, cancellationToken);
 
             if (!response.Success)
             {

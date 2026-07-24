@@ -2,6 +2,7 @@
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using System.Linq;
 
 namespace DLPManagementSystem.CompanyDlpDashboard;
 
@@ -24,7 +25,15 @@ public sealed class SqlDlpDashboardQueryService : IDlpDashboardQueryService
             ?? throw new InvalidOperationException($"Connection string '{connectionStringName}' was not found.");
     }
 
+    // v1 risk-score constants (documented starting point, see ComputeRiskScoresAsync) — adjustable later.
+    private const int RiskWindowDays = 30;
+    private const int RiskHighThreshold = 70;
+    private const int RiskMediumThreshold = 40;
+    private const int HeartbeatFreshMinutes = 5;
+    private const int TopRiskyUserCount = 10;
+
     public async Task<DlpDashboardSummaryDto> GetSummaryAsync(
+        Guid organizationId,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
         CancellationToken cancellationToken)
@@ -50,6 +59,11 @@ public sealed class SqlDlpDashboardQueryService : IDlpDashboardQueryService
         var actionBreakdown = await GetActionBreakdownAsync(connection, from, to, cancellationToken);
         var reasonBreakdown = await GetReasonBreakdownAsync(connection, from, to, cancellationToken);
         var recentEvents = await GetRecentEventsAsync(connection, from, to, cancellationToken);
+        var channelBreakdown = await GetChannelBreakdownAsync(connection, from, to, cancellationToken);
+        var weeklyTrend = await GetWeeklyTrendAsync(connection, cancellationToken);
+        var permissionRequestCounts = await GetPermissionRequestCountsAsync(connection, organizationId, cancellationToken);
+        var (topRiskyUsers, highRiskUserCount, riskByDepartment) = await ComputeRiskScoresAsync(connection, organizationId, cancellationToken);
+        var endpointAgents = await GetEndpointAgentStatusAsync(connection, organizationId, cancellationToken);
 
         return new DlpDashboardSummaryDto(
             DateTimeOffset.UtcNow,
@@ -59,7 +73,305 @@ public sealed class SqlDlpDashboardQueryService : IDlpDashboardQueryService
             totals.Totals,
             actionBreakdown,
             reasonBreakdown,
-            recentEvents);
+            recentEvents,
+            permissionRequestCounts,
+            weeklyTrend,
+            channelBreakdown,
+            topRiskyUsers,
+            riskByDepartment,
+            highRiskUserCount,
+            endpointAgents);
+    }
+
+    // Blocked-event count per real tracked channel category, for the summary's from/to window.
+    // Excludes the "System" category (policy.apply/agent.session housekeeping) — those default to
+    // Allow and aren't user-facing violations, so a Blocked row there would be unexpected, not a
+    // channel to chart. See DlpChannelBreakdownItemDto for the reconciliation note.
+    private static async Task<IReadOnlyList<DlpChannelBreakdownItemDto>> GetChannelBreakdownAsync(
+        SqlConnection connection,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT pac.Name AS Category, COUNT_BIG(1) AS Blocked
+FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+LEFT JOIN dbo.PermissionActions pa ON pa.[Key] = ae.ActionKey
+LEFT JOIN dbo.PermissionActionCategories pac ON pac.Id = pa.CategoryId
+WHERE ae.ReceivedAtUtc >= @FromUtc
+  AND ae.ReceivedAtUtc < @ToUtc
+  AND ad.Name = N'Block'
+  AND pac.Name IS NOT NULL
+  AND pac.Name <> N'System'
+GROUP BY pac.Name
+ORDER BY COUNT_BIG(1) DESC;";
+
+        var result = new List<DlpChannelBreakdownItemDto>();
+
+        await using var command = CreateCommand(connection, sql, from, to);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DlpChannelBreakdownItemDto(
+                GetString(reader, "Category"),
+                GetLong(reader, "Blocked")));
+        }
+
+        return result;
+    }
+
+    // Fixed rolling 4-week window (independent of the summary's from/to toggle). Bucketed in memory
+    // rather than in T-SQL date arithmetic for clarity/correctness — the row volume here is bounded by
+    // definition (28 days of events) so this is cheap.
+    private static async Task<IReadOnlyList<DlpWeeklyTrendPointDto>> GetWeeklyTrendAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTimeOffset.UtcNow;
+        var windowStart = nowUtc.AddDays(-28);
+
+        const string sql = @"
+SELECT ae.OccurredAtUtc, ad.Name AS DecisionName
+FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+WHERE ae.OccurredAtUtc >= @FromUtc
+  AND ae.OccurredAtUtc < @ToUtc;";
+
+        var rows = new List<(DateTimeOffset OccurredAtUtc, string? DecisionName)>();
+
+        await using (var command = CreateCommand(connection, sql, windowStart, nowUtc))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rows.Add((GetDateTimeOffset(reader, "OccurredAtUtc"), GetNullableString(reader, "DecisionName")));
+            }
+        }
+
+        var points = new List<DlpWeeklyTrendPointDto>();
+
+        for (var i = 3; i >= 0; i--)
+        {
+            var bucketEnd = nowUtc.AddDays(-7 * i);
+            var bucketStart = bucketEnd.AddDays(-7);
+
+            var bucketRows = rows.Where(r => r.OccurredAtUtc >= bucketStart && r.OccurredAtUtc < bucketEnd).ToList();
+            var blocked = bucketRows.Count(r => r.DecisionName == "Block");
+            var violations = bucketRows.Count(r => r.DecisionName is "Block" or "AuditOnly" or "Audit");
+
+            points.Add(new DlpWeeklyTrendPointDto(bucketStart, blocked, violations));
+        }
+
+        return points;
+    }
+
+    private static async Task<DlpPermissionRequestCountsDto> GetPermissionRequestCountsAsync(
+        SqlConnection connection,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT prs.Name AS StatusName, COUNT_BIG(1) AS Cnt
+FROM dbo.PermissionRequests pr
+INNER JOIN dbo.PermissionRequestStatuses prs ON prs.Id = pr.StatusId
+WHERE pr.OrganizationId = @OrganizationId
+GROUP BY prs.Name;";
+
+        long pending = 0, approved = 0, rejected = 0;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = 30;
+        command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var status = GetString(reader, "StatusName");
+            var count = GetLong(reader, "Cnt");
+
+            // "Pending" = anything still awaiting a decision (Submitted or UnderReview).
+            switch (status)
+            {
+                case "Submitted":
+                case "UnderReview":
+                    pending += count;
+                    break;
+                case "Approved":
+                    approved += count;
+                    break;
+                case "Rejected":
+                    rejected += count;
+                    break;
+            }
+        }
+
+        return new DlpPermissionRequestCountsDto(pending, approved, rejected);
+    }
+
+    // v1 risk score definition — not an established/audited metric, a documented first-pass starting
+    // point:
+    //   riskScore(employee) = round(100 * blockCount(employee, last 30 days) / max(blockCount) across
+    //   the org in the same window). If nobody has any blocked events, everyone scores 0.
+    //   riskLevel: >=70 High, >=40 Medium, else Low (RiskHighThreshold/RiskMediumThreshold above).
+    // Department risk = the average of its employees' risk scores (including employees with a score
+    // of 0 — a department's risk reflects all its people, not just the risky ones).
+    private static async Task<(IReadOnlyList<DlpRiskUserDto> TopRiskyUsers, int HighRiskUserCount, IReadOnlyList<DlpDepartmentRiskDto> RiskByDepartment)> ComputeRiskScoresAsync(
+        SqlConnection connection,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTimeOffset.UtcNow;
+        var windowStart = nowUtc.AddDays(-RiskWindowDays);
+
+        const string blockCountSql = @"
+SELECT e.Id AS EmployeeId, e.DisplayName, d.Name AS DepartmentName,
+       COUNT(CASE WHEN ad.Name = N'Block' THEN 1 END) AS BlockCount
+FROM dbo.Employees e
+LEFT JOIN dbo.Departments d ON d.Id = e.DepartmentId
+LEFT JOIN dbo.AuditEvents ae ON ae.EmployeeId = e.Id
+    AND ae.OccurredAtUtc >= @FromUtc AND ae.OccurredAtUtc < @ToUtc
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+WHERE e.OrganizationId = @OrganizationId
+GROUP BY e.Id, e.DisplayName, d.Name;";
+
+        var employeeRows = new List<(Guid EmployeeId, string DisplayName, string? DepartmentName, long BlockCount)>();
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = blockCountSql;
+            command.CommandTimeout = 30;
+            command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
+            command.Parameters.Add(new SqlParameter("@FromUtc", SqlDbType.DateTimeOffset) { Value = windowStart });
+            command.Parameters.Add(new SqlParameter("@ToUtc", SqlDbType.DateTimeOffset) { Value = nowUtc });
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                employeeRows.Add((
+                    reader.GetGuid(reader.GetOrdinal("EmployeeId")),
+                    GetString(reader, "DisplayName"),
+                    GetNullableString(reader, "DepartmentName"),
+                    GetLong(reader, "BlockCount")));
+            }
+        }
+
+        const string factorSql = @"
+SELECT ae.EmployeeId, pac.Name AS Category, COUNT_BIG(1) AS Cnt
+FROM dbo.AuditEvents ae
+INNER JOIN dbo.Employees e ON e.Id = ae.EmployeeId AND e.OrganizationId = @OrganizationId
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+LEFT JOIN dbo.PermissionActions pa ON pa.[Key] = ae.ActionKey
+LEFT JOIN dbo.PermissionActionCategories pac ON pac.Id = pa.CategoryId
+WHERE ae.OccurredAtUtc >= @FromUtc AND ae.OccurredAtUtc < @ToUtc
+  AND ad.Name = N'Block'
+  AND ae.EmployeeId IS NOT NULL
+  AND pac.Name IS NOT NULL
+  AND pac.Name <> N'System'
+GROUP BY ae.EmployeeId, pac.Name;";
+
+        var factorsByEmployee = new Dictionary<Guid, List<DlpRiskFactorDto>>();
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = factorSql;
+            command.CommandTimeout = 30;
+            command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
+            command.Parameters.Add(new SqlParameter("@FromUtc", SqlDbType.DateTimeOffset) { Value = windowStart });
+            command.Parameters.Add(new SqlParameter("@ToUtc", SqlDbType.DateTimeOffset) { Value = nowUtc });
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var employeeId = reader.GetGuid(reader.GetOrdinal("EmployeeId"));
+                var factor = new DlpRiskFactorDto(GetString(reader, "Category"), GetLong(reader, "Cnt"));
+
+                if (!factorsByEmployee.TryGetValue(employeeId, out var list))
+                {
+                    list = new List<DlpRiskFactorDto>();
+                    factorsByEmployee[employeeId] = list;
+                }
+
+                list.Add(factor);
+            }
+        }
+
+        var maxBlockCount = employeeRows.Count == 0 ? 0 : employeeRows.Max(x => x.BlockCount);
+
+        var scored = employeeRows.Select(x =>
+        {
+            var score = maxBlockCount == 0 ? 0 : (int)Math.Round(100.0 * x.BlockCount / maxBlockCount);
+            var level = score >= RiskHighThreshold ? "High" : score >= RiskMediumThreshold ? "Medium" : "Low";
+            var topFactors = factorsByEmployee.TryGetValue(x.EmployeeId, out var factors)
+                ? factors.OrderByDescending(f => f.Count).Take(3).ToList()
+                : new List<DlpRiskFactorDto>();
+
+            return new
+            {
+                x.EmployeeId,
+                x.DisplayName,
+                x.DepartmentName,
+                Score = score,
+                Level = level,
+                TopFactors = topFactors
+            };
+        }).ToList();
+
+        var topRiskyUsers = scored
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.DisplayName)
+            .Take(TopRiskyUserCount)
+            .Select(x => new DlpRiskUserDto(x.EmployeeId, x.DisplayName, x.DepartmentName, x.Score, x.Level, x.TopFactors))
+            .ToList();
+
+        var highRiskUserCount = scored.Count(x => x.Level == "High");
+
+        var riskByDepartment = scored
+            .GroupBy(x => x.DepartmentName ?? "Unassigned")
+            .Select(g => new DlpDepartmentRiskDto(g.Key, (int)Math.Round(g.Average(x => x.Score))))
+            .OrderByDescending(x => x.RiskScore)
+            .ToList();
+
+        return (topRiskyUsers, highRiskUserCount, riskByDepartment);
+    }
+
+    private static async Task<DlpEndpointAgentStatusDto> GetEndpointAgentStatusAsync(
+        SqlConnection connection,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT
+    COUNT(1) AS EnrolledDeviceCount,
+    SUM(CASE WHEN d.LastSeenAtUtc >= @FreshSinceUtc THEN 1 ELSE 0 END) AS HeartbeatFreshDeviceCount
+FROM dbo.Devices d
+WHERE d.OrganizationId = @OrganizationId;";
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = 30;
+        command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
+        command.Parameters.Add(new SqlParameter("@FreshSinceUtc", SqlDbType.DateTimeOffset) { Value = DateTimeOffset.UtcNow.AddMinutes(-HeartbeatFreshMinutes) });
+
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
+
+        var enrolledCount = 0;
+        var freshCount = 0;
+
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            enrolledCount = GetInt(reader, "EnrolledDeviceCount");
+            freshCount = GetInt(reader, "HeartbeatFreshDeviceCount");
+        }
+
+        var pct = enrolledCount == 0 ? 0 : Math.Round(100.0 * freshCount / enrolledCount, 1);
+
+        return new DlpEndpointAgentStatusDto(
+            EnrolledDeviceCount: enrolledCount,
+            HeartbeatFreshDeviceCount: freshCount,
+            AgentHeartbeatPct: pct);
     }
 
     private static async Task<(DlpDashboardTotalsDto Totals, long? PolicyVersion)> GetTotalsAsync(

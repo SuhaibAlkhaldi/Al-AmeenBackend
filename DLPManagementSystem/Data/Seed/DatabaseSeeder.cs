@@ -1,5 +1,6 @@
 ﻿using DLPManagementSystem.Helper.Hashing;
 using DLPManagementSystem.Models;
+using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
 
 namespace DLPManagementSystem.Data.Seed
@@ -8,11 +9,13 @@ namespace DLPManagementSystem.Data.Seed
     {
         private readonly DLPSystemContext _db;
         private readonly IWebHostEnvironment _environment;
+        private readonly IPasswordService _passwordService;
 
-        public DatabaseSeeder(DLPSystemContext db, IWebHostEnvironment environment)
+        public DatabaseSeeder(DLPSystemContext db, IWebHostEnvironment environment, IPasswordService passwordService)
         {
             _db = db;
             _environment = environment;
+            _passwordService = passwordService;
         }
 
         public async Task Seed(CancellationToken cancellationToken = default)
@@ -365,6 +368,11 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditEventTypeIfMissing(8, "SoftwareBlocked", "Software Blocked", ct);
             await AddAuditEventTypeIfMissing(9, "FileEncrypted", "File Encrypted", ct);
             await AddAuditEventTypeIfMissing(10, "FileDecrypted", "File Decrypted", ct);
+            await AddAuditEventTypeIfMissing(11, "ScreenshotBlocked", "Screenshot Blocked", ct);
+            await AddAuditEventTypeIfMissing(12, "ScreenRecordingBlocked", "Screen Recording Blocked", ct);
+            await AddAuditEventTypeIfMissing(13, "ScreenProcessBlocked", "Screen Process Blocked", ct);
+            await AddAuditEventTypeIfMissing(14, "ScreenProcessDetected", "Screen Process Detected", ct);
+            await AddAuditEventTypeIfMissing(15, "ScreenProcessAllowed", "Screen Process Allowed", ct);
 
             await AddAuditReasonCodeIfMissing(1, "DefaultAllow", "Default Allow", "Action was allowed by default policy.", ct);
             await AddAuditReasonCodeIfMissing(2, "GlobalDefaultDeny", "Global Default Deny", "Action was blocked by default deny policy.", ct);
@@ -386,6 +394,10 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditReasonCodeIfMissing(18, "FileDecryptionDenied", "File Decryption Denied", "File decryption was denied.", ct);
             await AddAuditReasonCodeIfMissing(19, "ValidSignedPolicy", "Valid Signed Policy", "The agent applied a valid signed policy.", ct);
             await AddAuditReasonCodeIfMissing(20, "PermissionGrantMatched","Permission Grant Matched","A matching permission grant was found for the action.",ct);
+            await AddAuditReasonCodeIfMissing(21, "DeniedByEffectiveScreenPolicy", "Denied by Effective Screen Policy", "Denied by the effective screen capture/recording policy.", ct);
+            await AddAuditReasonCodeIfMissing(22, "ProcessDeniedByPolicy", "Process Denied by Policy", "A screen-recording process was terminated by policy.", ct);
+            await AddAuditReasonCodeIfMissing(23, "ProcessTerminationFailed", "Process Termination Failed", "A screen-recording process was flagged but termination failed.", ct);
+            await AddAuditReasonCodeIfMissing(24, "ProcessAuditOnly", "Process Audit Only", "A screen-recording process was detected and logged under audit-only enforcement.", ct);
         }
 
         private async Task AddAuditDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
@@ -563,10 +575,7 @@ namespace DLPManagementSystem.Data.Seed
                     OrganizationId = organization.Id,
                     FullName = "Development Admin",
                     Email = "dev.admin@companydlp.local",
-
-                    // Development only. Later replace with proper password hasher.
-                    PasswordHash = SecurityHashHelper.Sha256("DevAdmin123!"),
-
+                    PasswordHash = string.Empty,
                     UserTypeId = adminUserType.Id,
                     RoleId = superAdminRole.Id,
                     StatusId = activeUserStatus.Id,
@@ -576,6 +585,7 @@ namespace DLPManagementSystem.Data.Seed
                     CreatedAtUtc = nowUtc,
                     UpdatedAtUtc = nowUtc
                 };
+                devAdmin.PasswordHash = _passwordService.HashPassword(devAdmin, "DevAdmin123!");
 
                 _db.Users.Add(devAdmin);
                 await _db.SaveChangesAsync(ct);

@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Identity;
 using DLPManagementSystem.CompanyDlpDashboard;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -60,6 +61,9 @@ builder.Services.AddMemoryCache();
 
 builder.Services.AddScoped<IPermissionLookupService, PermissionLookupService>();
 builder.Services.AddScoped<IPolicyVersionService, PolicyVersionService>();
+builder.Services.AddScoped<IAdminAuditLogService, AdminAuditLogService>();
+builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddSingleton<IPasswordService, PasswordService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILookupsService, LookupsService>();

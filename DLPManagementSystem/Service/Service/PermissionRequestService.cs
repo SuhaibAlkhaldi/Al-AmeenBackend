@@ -56,17 +56,20 @@ namespace DLPManagementSystem.Service.Service
         private readonly IPermissionLookupService _lookupService;
         private readonly IPolicyVersionService _policyVersionService;
         private readonly IPermissionGrantService _permissionGrantService;
+        private readonly IAdminAuditLogService _adminAuditLogService;
 
         public PermissionRequestService(
             DLPSystemContext db,
             IPermissionLookupService lookupService,
             IPolicyVersionService policyVersionService,
-            IPermissionGrantService permissionGrantService)
+            IPermissionGrantService permissionGrantService,
+            IAdminAuditLogService adminAuditLogService)
         {
             _db = db;
             _lookupService = lookupService;
             _policyVersionService = policyVersionService;
             _permissionGrantService = permissionGrantService;
+            _adminAuditLogService = adminAuditLogService;
         }
 
         public async Task<ApiResponse<PagedResultDto<PermissionRequestDto>>> GetRequestsAsync(
@@ -80,16 +83,13 @@ namespace DLPManagementSystem.Service.Service
             CancellationToken cancellationToken = default)
         {
             var effectiveRequestedByEmployeeId = requestedByEmployeeId;
+            var (isEmployee, callerEmployeeId) = await ResolveEmployeeScopeAsync(organizationId, callerUserId, callerUserTypeId, cancellationToken);
 
-            if (await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            if (isEmployee)
             {
                 // Employee-type callers can only ever see their own requests — force this regardless of
                 // whatever requestedByEmployeeId the client passed.
-                var callerEmployee = await _db.Employees
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.UserId == callerUserId, cancellationToken);
-
-                if (callerEmployee == null)
+                if (callerEmployeeId == null)
                 {
                     return ApiResponse<PagedResultDto<PermissionRequestDto>>.SuccessResponse(new PagedResultDto<PermissionRequestDto>
                     {
@@ -100,7 +100,7 @@ namespace DLPManagementSystem.Service.Service
                     });
                 }
 
-                effectiveRequestedByEmployeeId = callerEmployee.Id;
+                effectiveRequestedByEmployeeId = callerEmployeeId;
             }
 
             var query = _db.PermissionRequests
@@ -141,6 +141,39 @@ namespace DLPManagementSystem.Service.Service
             };
 
             return ApiResponse<PagedResultDto<PermissionRequestDto>>.SuccessResponse(result);
+        }
+
+        public async Task<ApiResponse<int>> GetPendingCountAsync(
+            Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
+            CancellationToken cancellationToken = default)
+        {
+            var (isEmployee, callerEmployeeId) = await ResolveEmployeeScopeAsync(organizationId, callerUserId, callerUserTypeId, cancellationToken);
+
+            if (isEmployee && callerEmployeeId == null)
+            {
+                return ApiResponse<int>.SuccessResponse(0);
+            }
+
+            var pendingStatusIds = await _db.PermissionRequestStatuses
+                .AsNoTracking()
+                .Where(x => x.Name == "Submitted" || x.Name == "UnderReview")
+                .Select(x => x.Id)
+                .ToListAsync(cancellationToken);
+
+            var query = _db.PermissionRequests
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && pendingStatusIds.Contains(x.StatusId));
+
+            if (isEmployee)
+            {
+                query = query.Where(x => x.RequestedByEmployeeId == callerEmployeeId!.Value);
+            }
+
+            var count = await query.CountAsync(cancellationToken);
+
+            return ApiResponse<int>.SuccessResponse(count);
         }
 
         public async Task<ApiResponse<PermissionRequestDto>> GetByIdAsync(
@@ -341,7 +374,25 @@ namespace DLPManagementSystem.Service.Service
                 $"Permission '{grant.ActionKey}' approved for subject {grant.SubjectId}.",
                 cancellationToken);
 
-            await _db.SaveChangesAsync(cancellationToken);
+            var approvedTargetDisplayName = await ResolveEmployeeDisplayNameAsync(organizationId, permissionRequest.RequestedByEmployeeId, cancellationToken);
+            await _adminAuditLogService.LogAsync(
+                organizationId, reviewedByUserId, "RequestApproved", "PermissionRequest", permissionRequest.Id, approvedTargetDisplayName,
+                $"Action '{permissionRequest.ActionKey}'. Notes: {request.ReviewNotes}", cancellationToken);
+
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (DbExceptionHelper.IsUniqueConstraintViolation(ex))
+            {
+                // Race-condition safety net: the pre-insert check in BuildGrantAsync can't fully rule out
+                // two concurrent approvals for the same employee+action both passing before either commits —
+                // the DB's unique index is the real guard, this just turns its violation into a clean
+                // bilingual failure instead of a raw 500.
+                return ApiResponse<PermissionRequestDto>.FailureResponse(
+                    "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
+                    "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
+            }
 
             return await GetByIdAsync(organizationId, id, reviewedByUserId, callerUserTypeId, cancellationToken);
         }
@@ -391,9 +442,23 @@ namespace DLPManagementSystem.Service.Service
             permissionRequest.ReviewNotes = request.ReviewNotes;
             permissionRequest.UpdatedAtUtc = nowUtc;
 
+            var rejectedTargetDisplayName = await ResolveEmployeeDisplayNameAsync(organizationId, permissionRequest.RequestedByEmployeeId, cancellationToken);
+            await _adminAuditLogService.LogAsync(
+                organizationId, reviewedByUserId, "RequestRejected", "PermissionRequest", permissionRequest.Id, rejectedTargetDisplayName,
+                $"Action '{permissionRequest.ActionKey}'. Notes: {request.ReviewNotes}", cancellationToken);
+
             await _db.SaveChangesAsync(cancellationToken);
 
             return await GetByIdAsync(organizationId, id, reviewedByUserId, callerUserTypeId, cancellationToken);
+        }
+
+        private async Task<string?> ResolveEmployeeDisplayNameAsync(Guid organizationId, Guid employeeId, CancellationToken cancellationToken)
+        {
+            return await _db.Employees
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.Id == employeeId)
+                .Select(x => x.DisplayName)
+                .FirstOrDefaultAsync(cancellationToken);
         }
 
         private async Task<bool> IsEmployeeUserTypeAsync(int userTypeId, CancellationToken cancellationToken)
@@ -403,6 +468,28 @@ namespace DLPManagementSystem.Service.Service
                 .FirstOrDefaultAsync(x => x.Name == "Employee", cancellationToken);
 
             return employeeUserType != null && userTypeId == employeeUserType.Id;
+        }
+
+        // Shared by GetRequestsAsync and GetPendingCountAsync so the "Employee callers only ever see
+        // their own" scoping rule lives in exactly one place. IsEmployee=true + EmployeeId=null means
+        // the caller is an Employee-type user with no linked Employee record — callers should treat
+        // that as "nothing to show" rather than falling through to an unscoped (org-wide) query.
+        private async Task<(bool IsEmployee, Guid? EmployeeId)> ResolveEmployeeScopeAsync(
+            Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
+            CancellationToken cancellationToken)
+        {
+            if (!await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                return (false, null);
+            }
+
+            var callerEmployee = await _db.Employees
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.UserId == callerUserId, cancellationToken);
+
+            return (true, callerEmployee?.Id);
         }
     }
 }

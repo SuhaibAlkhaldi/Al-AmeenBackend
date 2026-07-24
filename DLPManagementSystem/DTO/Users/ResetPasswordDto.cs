@@ -5,7 +5,7 @@ namespace DLPManagementSystem.DTO.Users
     public sealed class ResetPasswordDto
     {
         [Required]
-        [MinLength(6)]
+        [MinLength(10)]
         public string NewPassword { get; set; } = string.Empty;
     }
 }

@@ -10,10 +10,12 @@ namespace DLPManagementSystem.Service.Service
     public class EmployeeService : IEmployeeService
     {
         private readonly DLPSystemContext _db;
+        private readonly IAdminAuditLogService _adminAuditLogService;
 
-        public EmployeeService(DLPSystemContext db)
+        public EmployeeService(DLPSystemContext db, IAdminAuditLogService adminAuditLogService)
         {
             _db = db;
+            _adminAuditLogService = adminAuditLogService;
         }
 
         public async Task<ApiResponse<PagedResultDto<EmployeeListItemDto>>> GetEmployeesAsync(
@@ -105,7 +107,7 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<EmployeeDetailDto>.SuccessResponse(employee);
         }
 
-        public async Task<ApiResponse<EmployeeDetailDto>> CreateEmployeeAsync(Guid organizationId, CreateEmployeeDto request, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<EmployeeDetailDto>> CreateEmployeeAsync(Guid organizationId, Guid callerUserId, CreateEmployeeDto request, CancellationToken cancellationToken = default)
         {
             var emailExists = await _db.Employees
                 .AnyAsync(x => x.OrganizationId == organizationId && x.Email == request.Email, cancellationToken);
@@ -184,12 +186,16 @@ namespace DLPManagementSystem.Service.Service
 
             _db.Employees.Add(employee);
 
+            await _adminAuditLogService.LogAsync(
+                organizationId, callerUserId, "EmployeeCreated", "Employee", employee.Id, employee.DisplayName,
+                $"Employee number {employee.EmployeeNumber}.", cancellationToken);
+
             await _db.SaveChangesAsync(cancellationToken);
 
             return await GetEmployeeByIdAsync(organizationId, employee.Id, cancellationToken);
         }
 
-        public async Task<ApiResponse<EmployeeDetailDto>> UpdateEmployeeAsync(Guid organizationId, Guid id, UpdateEmployeeDto request, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<EmployeeDetailDto>> UpdateEmployeeAsync(Guid organizationId, Guid id, Guid callerUserId, UpdateEmployeeDto request, CancellationToken cancellationToken = default)
         {
             var employee = await _db.Employees
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
@@ -218,12 +224,16 @@ namespace DLPManagementSystem.Service.Service
             employee.StatusId = request.StatusId;
             employee.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
+            await _adminAuditLogService.LogAsync(
+                organizationId, callerUserId, "EmployeeUpdated", "Employee", employee.Id, employee.DisplayName,
+                null, cancellationToken);
+
             await _db.SaveChangesAsync(cancellationToken);
 
             return await GetEmployeeByIdAsync(organizationId, id, cancellationToken);
         }
 
-        public async Task<ApiResponse<bool>> DeleteEmployeeAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<bool>> DeleteEmployeeAsync(Guid organizationId, Guid id, Guid callerUserId, CancellationToken cancellationToken = default)
         {
             var employee = await _db.Employees
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
@@ -241,6 +251,10 @@ namespace DLPManagementSystem.Service.Service
 
             employee.StatusId = terminatedStatus.Id;
             employee.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+            await _adminAuditLogService.LogAsync(
+                organizationId, callerUserId, "EmployeeDeleted", "Employee", employee.Id, employee.DisplayName,
+                null, cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
 
