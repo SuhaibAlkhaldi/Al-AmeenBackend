@@ -1,7 +1,9 @@
 using DLPManagementSystem.Authentication;
 using DLPManagementSystem.Data.Seed;
+using DLPManagementSystem.Helper.Email;
 using DLPManagementSystem.Helper.Health;
 using DLPManagementSystem.Models;
+using DLPManagementSystem.Service.BackgroundServices;
 using DLPManagementSystem.Service.Interface;
 using DLPManagementSystem.Service.Service;
 using Microsoft.EntityFrameworkCore;
@@ -77,6 +79,10 @@ builder.Services.AddScoped<IPermissionGrantService, PermissionGrantService>();
 builder.Services.AddScoped<IFileClassificationService, FileClassificationService>();
 builder.Services.AddScoped<IFileKeyProtectionService, FileKeyProtectionService>();
 builder.Services.AddScoped<IEnrollmentTokenService, EnrollmentTokenService>();
+
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
+builder.Services.AddScoped<IAlertEmailService, AlertEmailService>();
+builder.Services.AddHostedService<AlertEmailNotificationWorker>();
 
 builder.Services.AddDataProtection();
 
