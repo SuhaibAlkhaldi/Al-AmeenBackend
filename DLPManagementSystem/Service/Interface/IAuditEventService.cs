@@ -1,5 +1,6 @@
 using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.AuditEvents;
+using Microsoft.AspNetCore.Http;
 
 namespace DLPManagementSystem.Service.Interface
 {
@@ -16,6 +17,19 @@ namespace DLPManagementSystem.Service.Interface
             DateTimeOffset? toUtc,
             int page,
             int pageSize,
+            CancellationToken cancellationToken = default);
+
+        // Streams every row matching the filters (no paging) as text/csv directly into the response body.
+        Task ExportAuditEventsAsync(
+            Guid organizationId,
+            Guid? deviceId,
+            Guid? employeeId,
+            string? actionKey,
+            int? decisionId,
+            int? reasonCodeId,
+            DateTimeOffset? fromUtc,
+            DateTimeOffset? toUtc,
+            HttpResponse response,
             CancellationToken cancellationToken = default);
     }
 }
