@@ -52,7 +52,8 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> CreateEmployee([FromBody] CreateEmployeeDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _employeeService.CreateEmployeeAsync(organizationId, request, cancellationToken);
+            var callerUserId = User.GetUserId();
+            var response = await _employeeService.CreateEmployeeAsync(organizationId, callerUserId, request, cancellationToken);
 
             if (!response.Success)
             {
@@ -67,7 +68,8 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> UpdateEmployee(Guid id, [FromBody] UpdateEmployeeDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _employeeService.UpdateEmployeeAsync(organizationId, id, request, cancellationToken);
+            var callerUserId = User.GetUserId();
+            var response = await _employeeService.UpdateEmployeeAsync(organizationId, id, callerUserId, request, cancellationToken);
 
             if (!response.Success)
             {
@@ -82,7 +84,8 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> DeleteEmployee(Guid id, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _employeeService.DeleteEmployeeAsync(organizationId, id, cancellationToken);
+            var callerUserId = User.GetUserId();
+            var response = await _employeeService.DeleteEmployeeAsync(organizationId, id, callerUserId, cancellationToken);
 
             if (!response.Success)
             {

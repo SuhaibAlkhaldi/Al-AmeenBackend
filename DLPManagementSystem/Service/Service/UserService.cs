@@ -10,10 +10,12 @@ namespace DLPManagementSystem.Service.Service
     public class UserService : IUserService
     {
         private readonly DLPSystemContext _db;
+        private readonly IAdminAuditLogService _adminAuditLogService;
 
-        public UserService(DLPSystemContext db)
+        public UserService(DLPSystemContext db, IAdminAuditLogService adminAuditLogService)
         {
             _db = db;
+            _adminAuditLogService = adminAuditLogService;
         }
 
         public async Task<ApiResponse<PagedResultDto<UserListItemDto>>> GetUsersAsync(
@@ -99,7 +101,7 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<UserDetailDto>.SuccessResponse(dto);
         }
 
-        public async Task<ApiResponse<UserDetailDto>> CreateUserAsync(Guid organizationId, string callerRoleName, CreateUserDto request, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<UserDetailDto>> CreateUserAsync(Guid organizationId, Guid callerUserId, string callerRoleName, CreateUserDto request, CancellationToken cancellationToken = default)
         {
             var elevationCheck = await CheckElevationAttemptAsync(callerRoleName, request.RoleId, cancellationToken);
             if (elevationCheck != null)
@@ -183,6 +185,10 @@ namespace DLPManagementSystem.Service.Service
                 });
             }
 
+            await _adminAuditLogService.LogAsync(
+                organizationId, callerUserId, "UserCreated", "User", user.Id, user.FullName,
+                $"Created user with role id {request.RoleId} and user type id {request.UserTypeId}.", cancellationToken);
+
             await _db.SaveChangesAsync(cancellationToken);
 
             return await GetUserByIdAsync(organizationId, user.Id, cancellationToken);
@@ -233,17 +239,33 @@ namespace DLPManagementSystem.Service.Service
                 }
             }
 
+            var oldRoleId = user.RoleId;
+            var roleChanged = oldRoleId != request.RoleId;
+
             user.FullName = request.FullName;
             user.RoleId = request.RoleId;
             user.StatusId = request.StatusId;
             user.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+            if (roleChanged)
+            {
+                await _adminAuditLogService.LogAsync(
+                    organizationId, callerUserId, "UserRoleChanged", "User", user.Id, user.FullName,
+                    $"Role changed from role id {oldRoleId} to role id {request.RoleId}.", cancellationToken);
+            }
+            else
+            {
+                await _adminAuditLogService.LogAsync(
+                    organizationId, callerUserId, "UserUpdated", "User", user.Id, user.FullName,
+                    $"Status set to status id {request.StatusId}.", cancellationToken);
+            }
 
             await _db.SaveChangesAsync(cancellationToken);
 
             return await GetUserByIdAsync(organizationId, id, cancellationToken);
         }
 
-        public async Task<ApiResponse<bool>> ResetPasswordAsync(Guid organizationId, Guid id, ResetPasswordDto request, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<bool>> ResetPasswordAsync(Guid organizationId, Guid id, Guid callerUserId, ResetPasswordDto request, CancellationToken cancellationToken = default)
         {
             var user = await _db.Users
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
@@ -255,6 +277,11 @@ namespace DLPManagementSystem.Service.Service
 
             user.PasswordHash = SecurityHashHelper.Sha256(request.NewPassword);
             user.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+            // Never log the actual password value here - only that a reset happened.
+            await _adminAuditLogService.LogAsync(
+                organizationId, callerUserId, "PasswordReset", "User", user.Id, user.FullName,
+                null, cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -286,6 +313,10 @@ namespace DLPManagementSystem.Service.Service
 
             user.StatusId = disabledStatus.Id;
             user.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+            await _adminAuditLogService.LogAsync(
+                organizationId, callerUserId, "UserDeleted", "User", user.Id, user.FullName,
+                null, cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
 

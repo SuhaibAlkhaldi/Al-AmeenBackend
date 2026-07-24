@@ -11,12 +11,18 @@ namespace DLPManagementSystem.Service.Service
         private readonly DLPSystemContext _db;
         private readonly IPolicyVersionService _policyVersionService;
         private readonly IPermissionLookupService _lookupService;
+        private readonly IAdminAuditLogService _adminAuditLogService;
 
-        public PermissionGrantService(DLPSystemContext db, IPolicyVersionService policyVersionService, IPermissionLookupService lookupService)
+        public PermissionGrantService(
+            DLPSystemContext db,
+            IPolicyVersionService policyVersionService,
+            IPermissionLookupService lookupService,
+            IAdminAuditLogService adminAuditLogService)
         {
             _db = db;
             _policyVersionService = policyVersionService;
             _lookupService = lookupService;
+            _adminAuditLogService = adminAuditLogService;
         }
 
         public async Task<ApiResponse<PagedResultDto<PermissionGrantDto>>> GetGrantsAsync(
@@ -152,6 +158,11 @@ namespace DLPManagementSystem.Service.Service
                 $"Permission '{grant.ActionKey}' revoked for subject {grant.SubjectId}.",
                 cancellationToken);
 
+            var targetDisplayName = await ResolveSubjectDisplayNameAsync(organizationId, grant.SubjectId, cancellationToken);
+            await _adminAuditLogService.LogAsync(
+                organizationId, revokedByUserId, "GrantRevoked", "PermissionGrant", grant.Id, targetDisplayName,
+                $"Action '{grant.ActionKey}'. Reason: {request.RevocationReason}", cancellationToken);
+
             await _db.SaveChangesAsync(cancellationToken);
 
             return ApiResponse<bool>.SuccessResponse(true, "Permission grant revoked successfully.", "تم إلغاء منحة الصلاحية بنجاح");
@@ -192,6 +203,12 @@ namespace DLPManagementSystem.Service.Service
                 "PermissionGrant",
                 null,
                 $"{toRevoke.Count} permission grant(s) revoked for subject {request.SubjectId}.",
+                cancellationToken);
+
+            var bulkTargetDisplayName = await ResolveSubjectDisplayNameAsync(organizationId, request.SubjectId, cancellationToken);
+            await _adminAuditLogService.LogAsync(
+                organizationId, revokedByUserId, "GrantsBulkRevoked", "PermissionGrant", null, bulkTargetDisplayName,
+                $"{toRevoke.Count} grant(s) revoked: {string.Join(", ", toRevoke.Select(x => x.ActionKey))}. Reason: {request.RevocationReason}",
                 cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
@@ -383,6 +400,10 @@ namespace DLPManagementSystem.Service.Service
                 $"Permission '{grant.ActionKey}' granted directly to subject {grant.SubjectId}.",
                 cancellationToken);
 
+            await _adminAuditLogService.LogAsync(
+                organizationId, grantedByUserId, "GrantCreated", "PermissionGrant", grant.Id, employee.DisplayName,
+                $"Action '{grant.ActionKey}', grant type '{request.GrantType}'.", cancellationToken);
+
             try
             {
                 await _db.SaveChangesAsync(cancellationToken);
@@ -408,6 +429,22 @@ namespace DLPManagementSystem.Service.Service
             var dto = MapToDto(savedGrant, DateTimeOffset.UtcNow, employeeNames);
 
             return ApiResponse<PermissionGrantDto>.SuccessResponse(dto, "Permission granted successfully.", "تم منح الصلاحية بنجاح");
+        }
+
+        private async Task<string?> ResolveSubjectDisplayNameAsync(Guid organizationId, string subjectId, CancellationToken cancellationToken)
+        {
+            if (!Guid.TryParse(subjectId, out var subjectGuid))
+            {
+                return subjectId;
+            }
+
+            var employee = await _db.Employees
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.Id == subjectGuid)
+                .Select(x => x.DisplayName)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return employee ?? subjectId;
         }
 
         private async Task<bool> IsEmployeeUserTypeAsync(int userTypeId, CancellationToken cancellationToken)

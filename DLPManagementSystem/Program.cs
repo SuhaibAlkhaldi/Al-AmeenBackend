@@ -60,6 +60,7 @@ builder.Services.AddMemoryCache();
 
 builder.Services.AddScoped<IPermissionLookupService, PermissionLookupService>();
 builder.Services.AddScoped<IPolicyVersionService, PolicyVersionService>();
+builder.Services.AddScoped<IAdminAuditLogService, AdminAuditLogService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILookupsService, LookupsService>();

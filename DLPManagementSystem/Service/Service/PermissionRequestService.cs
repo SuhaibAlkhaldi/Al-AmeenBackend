@@ -56,17 +56,20 @@ namespace DLPManagementSystem.Service.Service
         private readonly IPermissionLookupService _lookupService;
         private readonly IPolicyVersionService _policyVersionService;
         private readonly IPermissionGrantService _permissionGrantService;
+        private readonly IAdminAuditLogService _adminAuditLogService;
 
         public PermissionRequestService(
             DLPSystemContext db,
             IPermissionLookupService lookupService,
             IPolicyVersionService policyVersionService,
-            IPermissionGrantService permissionGrantService)
+            IPermissionGrantService permissionGrantService,
+            IAdminAuditLogService adminAuditLogService)
         {
             _db = db;
             _lookupService = lookupService;
             _policyVersionService = policyVersionService;
             _permissionGrantService = permissionGrantService;
+            _adminAuditLogService = adminAuditLogService;
         }
 
         public async Task<ApiResponse<PagedResultDto<PermissionRequestDto>>> GetRequestsAsync(
@@ -371,6 +374,11 @@ namespace DLPManagementSystem.Service.Service
                 $"Permission '{grant.ActionKey}' approved for subject {grant.SubjectId}.",
                 cancellationToken);
 
+            var approvedTargetDisplayName = await ResolveEmployeeDisplayNameAsync(organizationId, permissionRequest.RequestedByEmployeeId, cancellationToken);
+            await _adminAuditLogService.LogAsync(
+                organizationId, reviewedByUserId, "RequestApproved", "PermissionRequest", permissionRequest.Id, approvedTargetDisplayName,
+                $"Action '{permissionRequest.ActionKey}'. Notes: {request.ReviewNotes}", cancellationToken);
+
             try
             {
                 await _db.SaveChangesAsync(cancellationToken);
@@ -434,9 +442,23 @@ namespace DLPManagementSystem.Service.Service
             permissionRequest.ReviewNotes = request.ReviewNotes;
             permissionRequest.UpdatedAtUtc = nowUtc;
 
+            var rejectedTargetDisplayName = await ResolveEmployeeDisplayNameAsync(organizationId, permissionRequest.RequestedByEmployeeId, cancellationToken);
+            await _adminAuditLogService.LogAsync(
+                organizationId, reviewedByUserId, "RequestRejected", "PermissionRequest", permissionRequest.Id, rejectedTargetDisplayName,
+                $"Action '{permissionRequest.ActionKey}'. Notes: {request.ReviewNotes}", cancellationToken);
+
             await _db.SaveChangesAsync(cancellationToken);
 
             return await GetByIdAsync(organizationId, id, reviewedByUserId, callerUserTypeId, cancellationToken);
+        }
+
+        private async Task<string?> ResolveEmployeeDisplayNameAsync(Guid organizationId, Guid employeeId, CancellationToken cancellationToken)
+        {
+            return await _db.Employees
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.Id == employeeId)
+                .Select(x => x.DisplayName)
+                .FirstOrDefaultAsync(cancellationToken);
         }
 
         private async Task<bool> IsEmployeeUserTypeAsync(int userTypeId, CancellationToken cancellationToken)

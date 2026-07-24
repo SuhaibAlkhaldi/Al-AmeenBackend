@@ -16,10 +16,10 @@ namespace DLPManagementSystem.Service.Interface
 
         Task<ApiResponse<EmployeeDetailDto>> GetEmployeeByIdAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default);
 
-        Task<ApiResponse<EmployeeDetailDto>> CreateEmployeeAsync(Guid organizationId, CreateEmployeeDto request, CancellationToken cancellationToken = default);
+        Task<ApiResponse<EmployeeDetailDto>> CreateEmployeeAsync(Guid organizationId, Guid callerUserId, CreateEmployeeDto request, CancellationToken cancellationToken = default);
 
-        Task<ApiResponse<EmployeeDetailDto>> UpdateEmployeeAsync(Guid organizationId, Guid id, UpdateEmployeeDto request, CancellationToken cancellationToken = default);
+        Task<ApiResponse<EmployeeDetailDto>> UpdateEmployeeAsync(Guid organizationId, Guid id, Guid callerUserId, UpdateEmployeeDto request, CancellationToken cancellationToken = default);
 
-        Task<ApiResponse<bool>> DeleteEmployeeAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default);
+        Task<ApiResponse<bool>> DeleteEmployeeAsync(Guid organizationId, Guid id, Guid callerUserId, CancellationToken cancellationToken = default);
     }
 }
