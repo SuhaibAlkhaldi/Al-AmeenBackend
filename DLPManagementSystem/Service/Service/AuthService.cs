@@ -3,7 +3,6 @@ using System.Security.Claims;
 using System.Text;
 using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.Auth;
-using DLPManagementSystem.Helper.Hashing;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
@@ -13,13 +12,24 @@ namespace DLPManagementSystem.Service.Service
 {
     public class AuthService : IAuthService
     {
+        private const int MaxFailedLoginAttempts = 5;
+        private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
+
         private readonly DLPSystemContext _db;
         private readonly IConfiguration _configuration;
+        private readonly IPasswordService _passwordService;
+        private readonly IAdminAuditLogService _adminAuditLogService;
 
-        public AuthService(DLPSystemContext db, IConfiguration configuration)
+        public AuthService(
+            DLPSystemContext db,
+            IConfiguration configuration,
+            IPasswordService passwordService,
+            IAdminAuditLogService adminAuditLogService)
         {
             _db = db;
             _configuration = configuration;
+            _passwordService = passwordService;
+            _adminAuditLogService = adminAuditLogService;
         }
 
         public async Task<ApiResponse<LoginResponseDto>> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
@@ -29,8 +39,46 @@ namespace DLPManagementSystem.Service.Service
                 .Include(x => x.Status)
                 .FirstOrDefaultAsync(x => x.Email == request.Email, cancellationToken);
 
-            if (user == null || user.PasswordHash != SecurityHashHelper.Sha256(request.Password))
+            if (user == null)
             {
+                return ApiResponse<LoginResponseDto>.FailureResponse(
+                    "Invalid email or password.",
+                    "البريد الإلكتروني أو كلمة المرور غير صحيحة");
+            }
+
+            var nowUtc = DateTimeOffset.UtcNow;
+
+            // Locked-out accounts are rejected before the password is even checked, and a lockout in
+            // progress is never extended by further attempts against it.
+            if (user.LockedOutUntilUtc.HasValue && user.LockedOutUntilUtc.Value > nowUtc)
+            {
+                return ApiResponse<LoginResponseDto>.FailureResponse(
+                    "This account is temporarily locked due to repeated failed sign-in attempts. Please try again later.",
+                    "تم قفل هذا الحساب مؤقتًا بسبب تكرار محاولات تسجيل الدخول الفاشلة. يرجى المحاولة لاحقًا");
+            }
+
+            if (!_passwordService.VerifyAndUpgrade(user, request.Password))
+            {
+                user.FailedLoginAttemptCount++;
+
+                if (user.FailedLoginAttemptCount >= MaxFailedLoginAttempts)
+                {
+                    user.LockedOutUntilUtc = nowUtc.Add(LockoutDuration);
+                    user.FailedLoginAttemptCount = 0;
+
+                    // Actor is the affected account itself: this is a system-triggered security event, not
+                    // an action a human admin performed, but it's exactly the kind of admin-relevant record
+                    // this log exists for (someone should be able to see "this account got locked out and
+                    // when"). Modeling the account as its own actor keeps the log's existing actor-lookup
+                    // logic (which resolves email/name/role from ActorUserId) working unmodified.
+                    await _adminAuditLogService.LogAsync(
+                        user.OrganizationId, user.Id, "AccountLockedOut", "User", user.Id, user.FullName,
+                        $"Locked out until {user.LockedOutUntilUtc:o} UTC after {MaxFailedLoginAttempts} consecutive failed login attempts.",
+                        cancellationToken);
+                }
+
+                await _db.SaveChangesAsync(cancellationToken);
+
                 return ApiResponse<LoginResponseDto>.FailureResponse(
                     "Invalid email or password.",
                     "البريد الإلكتروني أو كلمة المرور غير صحيحة");
@@ -38,12 +86,19 @@ namespace DLPManagementSystem.Service.Service
 
             if (!string.Equals(user.Status.Name, "Active", StringComparison.OrdinalIgnoreCase))
             {
+                // Password was correct (and VerifyAndUpgrade may have already rewritten PasswordHash to the
+                // new format in memory) - persist that upgrade even though login itself is being rejected,
+                // so a correctly-authenticated-but-inactive account still converges to the new hash format
+                // instead of silently losing the upgrade opportunity every time.
+                await _db.SaveChangesAsync(cancellationToken);
+
                 return ApiResponse<LoginResponseDto>.FailureResponse(
                     "This account is not active.",
                     "هذا الحساب غير مفعل");
             }
 
-            var nowUtc = DateTimeOffset.UtcNow;
+            user.FailedLoginAttemptCount = 0;
+            user.LockedOutUntilUtc = null;
             user.LastLoginAtUtc = nowUtc;
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -89,14 +144,14 @@ namespace DLPManagementSystem.Service.Service
                 return ApiResponse<bool>.FailureResponse("User was not found.", "المستخدم غير موجود");
             }
 
-            if (user.PasswordHash != SecurityHashHelper.Sha256(request.CurrentPassword))
+            if (!_passwordService.VerifyAndUpgrade(user, request.CurrentPassword))
             {
                 return ApiResponse<bool>.FailureResponse(
                     "Current password is incorrect.",
                     "كلمة المرور الحالية غير صحيحة");
             }
 
-            user.PasswordHash = SecurityHashHelper.Sha256(request.NewPassword);
+            user.PasswordHash = _passwordService.HashPassword(user, request.NewPassword);
             user.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
             await _db.SaveChangesAsync(cancellationToken);

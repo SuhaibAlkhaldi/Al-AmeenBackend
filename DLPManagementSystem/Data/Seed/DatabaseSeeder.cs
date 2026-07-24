@@ -1,5 +1,6 @@
 ﻿using DLPManagementSystem.Helper.Hashing;
 using DLPManagementSystem.Models;
+using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
 
 namespace DLPManagementSystem.Data.Seed
@@ -8,11 +9,13 @@ namespace DLPManagementSystem.Data.Seed
     {
         private readonly DLPSystemContext _db;
         private readonly IWebHostEnvironment _environment;
+        private readonly IPasswordService _passwordService;
 
-        public DatabaseSeeder(DLPSystemContext db, IWebHostEnvironment environment)
+        public DatabaseSeeder(DLPSystemContext db, IWebHostEnvironment environment, IPasswordService passwordService)
         {
             _db = db;
             _environment = environment;
+            _passwordService = passwordService;
         }
 
         public async Task Seed(CancellationToken cancellationToken = default)
@@ -572,10 +575,7 @@ namespace DLPManagementSystem.Data.Seed
                     OrganizationId = organization.Id,
                     FullName = "Development Admin",
                     Email = "dev.admin@companydlp.local",
-
-                    // Development only. Later replace with proper password hasher.
-                    PasswordHash = SecurityHashHelper.Sha256("DevAdmin123!"),
-
+                    PasswordHash = string.Empty,
                     UserTypeId = adminUserType.Id,
                     RoleId = superAdminRole.Id,
                     StatusId = activeUserStatus.Id,
@@ -585,6 +585,7 @@ namespace DLPManagementSystem.Data.Seed
                     CreatedAtUtc = nowUtc,
                     UpdatedAtUtc = nowUtc
                 };
+                devAdmin.PasswordHash = _passwordService.HashPassword(devAdmin, "DevAdmin123!");
 
                 _db.Users.Add(devAdmin);
                 await _db.SaveChangesAsync(ct);

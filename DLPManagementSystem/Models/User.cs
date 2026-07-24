@@ -32,6 +32,10 @@ public partial class User
 
     public DateTimeOffset? LastLoginAtUtc { get; set; }
 
+    public int FailedLoginAttemptCount { get; set; }
+
+    public DateTimeOffset? LockedOutUntilUtc { get; set; }
+
     public bool IsEmailVerified { get; set; }
 
     public DateTimeOffset CreatedAtUtc { get; set; }

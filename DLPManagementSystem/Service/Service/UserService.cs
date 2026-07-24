@@ -1,6 +1,5 @@
 using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.Users;
-using DLPManagementSystem.Helper.Hashing;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
@@ -11,11 +10,13 @@ namespace DLPManagementSystem.Service.Service
     {
         private readonly DLPSystemContext _db;
         private readonly IAdminAuditLogService _adminAuditLogService;
+        private readonly IPasswordService _passwordService;
 
-        public UserService(DLPSystemContext db, IAdminAuditLogService adminAuditLogService)
+        public UserService(DLPSystemContext db, IAdminAuditLogService adminAuditLogService, IPasswordService passwordService)
         {
             _db = db;
             _adminAuditLogService = adminAuditLogService;
+            _passwordService = passwordService;
         }
 
         public async Task<ApiResponse<PagedResultDto<UserListItemDto>>> GetUsersAsync(
@@ -150,13 +151,14 @@ namespace DLPManagementSystem.Service.Service
                 OrganizationId = organizationId,
                 FullName = request.FullName,
                 Email = request.Email,
-                PasswordHash = SecurityHashHelper.Sha256(request.Password),
+                PasswordHash = string.Empty,
                 RoleId = request.RoleId,
                 UserTypeId = request.UserTypeId,
                 StatusId = activeStatus.Id,
                 IsEmailVerified = false,
                 CreatedAtUtc = nowUtc
             };
+            user.PasswordHash = _passwordService.HashPassword(user, request.Password);
 
             _db.Users.Add(user);
 
@@ -275,7 +277,7 @@ namespace DLPManagementSystem.Service.Service
                 return ApiResponse<bool>.FailureResponse("User was not found.", "المستخدم غير موجود");
             }
 
-            user.PasswordHash = SecurityHashHelper.Sha256(request.NewPassword);
+            user.PasswordHash = _passwordService.HashPassword(user, request.NewPassword);
             user.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
             // Never log the actual password value here - only that a reset happened.
