@@ -66,7 +66,9 @@ namespace DLPManagementSystem.Service.Interface
             string reason,
             Guid grantedByUserId,
             Guid? sourcePermissionRequestId,
-            CancellationToken cancellationToken = default);
+            CancellationToken cancellationToken = default,
+            string? fileHash = null,
+            string? classificationTier = null);
 
         Task<ApiResponse<PermissionGrantDto>> CreateDirectGrantAsync(
             Guid organizationId,

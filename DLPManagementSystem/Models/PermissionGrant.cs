@@ -50,6 +50,16 @@ public partial class PermissionGrant
     [StringLength(1000)]
     public string? RevocationReason { get; set; }
 
+    // Both null = ordinary action-level grant (unchanged behavior). FileHash set = grant covers
+    // exactly one file (SHA-256, lowercase hex, matches the agent's PermissionGrant.FileHash).
+    // ClassificationTier set (FileHash null) = grant covers any file classified at or below this
+    // tier. Mutually exclusive - a grant is scoped to one exact file or to a tier, never both.
+    [StringLength(64)]
+    public string? FileHash { get; set; }
+
+    [StringLength(20)]
+    public string? ClassificationTier { get; set; }
+
     [ForeignKey("ActionKey")]
     [InverseProperty("PermissionGrants")]
     public virtual PermissionAction ActionKeyNavigation { get; set; } = null!;

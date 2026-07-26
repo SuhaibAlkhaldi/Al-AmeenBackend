@@ -41,7 +41,13 @@ namespace DLPManagementSystem.Service.Service
             GrantRevokedAtUtc = x.ResultPermissionGrant != null ? x.ResultPermissionGrant.RevokedAtUtc : null,
             GrantRevocationReason = x.ResultPermissionGrant != null ? x.ResultPermissionGrant.RevocationReason : null,
             CreatedAtUtc = x.CreatedAtUtc,
-            UpdatedAtUtc = x.UpdatedAtUtc
+            UpdatedAtUtc = x.UpdatedAtUtc,
+            ClassificationTier = x.ClassificationTier,
+            FileName = x.PermissionRequestAttachments.Select(a => a.FileName).FirstOrDefault(),
+            FileSizeBytes = x.PermissionRequestAttachments.Select(a => (long?)a.SizeInBytes).FirstOrDefault(),
+            FileSha256 = x.PermissionRequestAttachments.Select(a => a.Sha256Hash).FirstOrDefault(),
+            FileClassification = x.PermissionRequestAttachments.Select(a => a.Classification).FirstOrDefault(),
+            FileClassificationReasonCode = x.PermissionRequestAttachments.Select(a => a.ClassificationReasonCode).FirstOrDefault()
         };
 
         private static void PopulateGrantRuntimeStatus(PermissionRequestDto dto, DateTimeOffset nowUtc)
@@ -213,6 +219,73 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<PermissionRequestDto>.SuccessResponse(dto);
         }
 
+        // Both browser.upload and browser.drag-drop are the only action keys the agent's file
+        // classification cache/scanner covers - the exact-file request path only ever makes sense for
+        // these two, so the prefill lookup below is scoped to just them rather than any action key.
+        private static readonly string[] FileScopedActionKeys = ["browser.upload", "browser.drag-drop"];
+
+        public async Task<ApiResponse<SourceEventDetailsDto>> GetSourceEventDetailsAsync(
+            Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
+            Guid correlationId,
+            CancellationToken cancellationToken = default)
+        {
+            if (!await IsEmployeeUserTypeAsync(callerUserTypeId, cancellationToken))
+            {
+                return ApiResponse<SourceEventDetailsDto>.FailureResponse(
+                    "Only Employee accounts are permitted to view blocked-attempt details.",
+                    "فقط حسابات الموظفين مخوّلة بعرض تفاصيل محاولات الحظر");
+            }
+
+            var employee = await _db.Employees
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.UserId == callerUserId, cancellationToken);
+
+            if (employee == null)
+            {
+                return ApiResponse<SourceEventDetailsDto>.FailureResponse(
+                    "The current user does not have a linked employee profile.",
+                    "المستخدم الحالي لا يملك ملف موظف مرتبط");
+            }
+
+            var auditEvent = await _db.AuditEvents
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId
+                    && x.CorrelationId == correlationId
+                    && x.EmployeeId == employee.Id
+                    && FileScopedActionKeys.Contains(x.ActionKey))
+                .OrderByDescending(x => x.OccurredAtUtc)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (auditEvent == null)
+            {
+                return ApiResponse<SourceEventDetailsDto>.FailureResponse(
+                    "The referenced blocked attempt was not found.",
+                    "محاولة الحظر المشار إليها غير موجودة");
+            }
+
+            var fileDetails = ParseResourceFromMetadata(auditEvent.MetadataJson);
+            if (fileDetails == null)
+            {
+                return ApiResponse<SourceEventDetailsDto>.FailureResponse(
+                    "The referenced blocked attempt has no recorded file details.",
+                    "محاولة الحظر المشار إليها لا تحتوي على تفاصيل ملف مسجّلة");
+            }
+
+            return ApiResponse<SourceEventDetailsDto>.SuccessResponse(new SourceEventDetailsDto
+            {
+                CorrelationId = correlationId,
+                ActionKey = auditEvent.ActionKey,
+                FileName = fileDetails.FileName,
+                SizeBytes = fileDetails.SizeBytes,
+                Sha256 = fileDetails.Sha256,
+                Classification = fileDetails.Classification,
+                ClassificationReasonCode = fileDetails.ClassificationReasonCode,
+                OccurredAtUtc = auditEvent.OccurredAtUtc
+            });
+        }
+
         public async Task<ApiResponse<PermissionRequestDto>> CreateAsync(
             Guid organizationId,
             Guid requestedByUserId,
@@ -243,6 +316,42 @@ namespace DLPManagementSystem.Service.Service
             if (!actionExists)
             {
                 return ApiResponse<PermissionRequestDto>.FailureResponse("Permission action was not found.", "إجراء الصلاحية غير موجود");
+            }
+
+            if (request.SourceCorrelationId.HasValue && !string.IsNullOrWhiteSpace(request.ClassificationTier))
+            {
+                return ApiResponse<PermissionRequestDto>.FailureResponse(
+                    "A request cannot target a specific file and a classification tier at the same time.",
+                    "لا يمكن أن يستهدف الطلب ملفًا محددًا وتصنيفًا عامًا في نفس الوقت");
+            }
+
+            string? classificationTier = null;
+            SourceEventFileDetails? fileDetails = null;
+
+            if (!string.IsNullOrWhiteSpace(request.ClassificationTier))
+            {
+                if (!DTO.AgentFiles.ClassificationTiers.IsValidRequestableTier(request.ClassificationTier))
+                {
+                    return ApiResponse<PermissionRequestDto>.FailureResponse(
+                        "Classification tier must be Internal, Secret, or Very_Secret.",
+                        "يجب أن يكون تصنيف الملف مقيد أو سري أو سري للغاية");
+                }
+
+                classificationTier = request.ClassificationTier;
+            }
+            else if (request.SourceCorrelationId.HasValue)
+            {
+                var sourceEventResult = await ResolveSourceEventFileDetailsAsync(
+                    organizationId, employee.Id, request.ActionKey, request.SourceCorrelationId.Value, cancellationToken);
+
+                if (sourceEventResult == null)
+                {
+                    return ApiResponse<PermissionRequestDto>.FailureResponse(
+                        "The referenced blocked attempt was not found.",
+                        "محاولة الحظر المشار إليها غير موجودة");
+                }
+
+                fileDetails = sourceEventResult;
             }
 
             int requestedGrantTypeId;
@@ -280,14 +389,118 @@ namespace DLPManagementSystem.Service.Service
                 RequestedExpiresAtUtc = request.RequestedExpiresAtUtc,
                 BusinessJustification = request.BusinessJustification,
                 StatusId = statusId,
+                ClassificationTier = classificationTier,
                 SubmittedAtUtc = nowUtc,
                 CreatedAtUtc = nowUtc
             };
 
             _db.PermissionRequests.Add(permissionRequest);
+
+            if (fileDetails != null)
+            {
+                _db.PermissionRequestAttachments.Add(new PermissionRequestAttachment
+                {
+                    Id = Guid.NewGuid(),
+                    OrganizationId = organizationId,
+                    PermissionRequestId = permissionRequest.Id,
+                    UploadedByUserId = requestedByUserId,
+                    FileName = fileDetails.FileName,
+                    OriginalFileName = fileDetails.FileName,
+                    ContentType = null,
+                    SizeInBytes = fileDetails.SizeBytes,
+                    // No file content is ever transferred as part of submitting a request — this row
+                    // describes a file the agent already observed and classified, not an uploaded one,
+                    // so there is no real file on disk for this path to point to.
+                    StoragePath = $"agent-observed:{request.SourceCorrelationId}",
+                    Sha256Hash = fileDetails.Sha256,
+                    Classification = fileDetails.Classification,
+                    ClassificationReasonCode = fileDetails.ClassificationReasonCode,
+                    CreatedAtUtc = nowUtc
+                });
+            }
+
             await _db.SaveChangesAsync(cancellationToken);
 
             return await GetByIdAsync(organizationId, permissionRequest.Id, requestedByUserId, callerUserTypeId, cancellationToken);
+        }
+
+        private sealed record SourceEventFileDetails(
+            string FileName,
+            long SizeBytes,
+            string Sha256,
+            string? Classification,
+            string? ClassificationReasonCode);
+
+        private sealed class AuditMetadataEnvelope
+        {
+            public AuditMetadataResource? Resource { get; set; }
+        }
+
+        private sealed class AuditMetadataResource
+        {
+            public string? Name { get; set; }
+            public string? Extension { get; set; }
+            public long? SizeBytes { get; set; }
+            public string? Sha256 { get; set; }
+            public string? Classification { get; set; }
+            public string? ClassificationReasonCode { get; set; }
+        }
+
+        // Never trusts client-supplied file details — looks the blocked attempt up server-side by
+        // CorrelationId and verifies it actually belongs to the requesting employee, so a guessed or
+        // reused correlation id from a different employee's blocked attempt can't be used to spoof a
+        // request. Returns null for "not found or not owned by this employee" (both collapse to the
+        // same caller-visible failure, same pattern as GetByIdAsync's employee-scoping check).
+        private async Task<SourceEventFileDetails?> ResolveSourceEventFileDetailsAsync(
+            Guid organizationId,
+            Guid employeeId,
+            string actionKey,
+            Guid correlationId,
+            CancellationToken cancellationToken)
+        {
+            var auditEvent = await _db.AuditEvents
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId
+                    && x.CorrelationId == correlationId
+                    && x.ActionKey == actionKey
+                    && x.EmployeeId == employeeId)
+                .OrderByDescending(x => x.OccurredAtUtc)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return auditEvent == null ? null : ParseResourceFromMetadata(auditEvent.MetadataJson);
+        }
+
+        private static SourceEventFileDetails? ParseResourceFromMetadata(string? metadataJson)
+        {
+            if (string.IsNullOrWhiteSpace(metadataJson))
+            {
+                return null;
+            }
+
+            AuditMetadataEnvelope? metadata;
+            try
+            {
+                metadata = System.Text.Json.JsonSerializer.Deserialize<AuditMetadataEnvelope>(
+                    metadataJson,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return null;
+            }
+
+            var resource = metadata?.Resource;
+            if (resource == null || string.IsNullOrWhiteSpace(resource.Sha256))
+            {
+                return null;
+            }
+
+            return new SourceEventFileDetails(
+                string.IsNullOrWhiteSpace(resource.Name) ? "unknown" : resource.Name,
+                resource.SizeBytes ?? 0,
+                resource.Sha256,
+                string.IsNullOrWhiteSpace(resource.Classification) ? null : resource.Classification,
+                string.IsNullOrWhiteSpace(resource.ClassificationReasonCode) ? null : resource.ClassificationReasonCode);
         }
 
         public async Task<ApiResponse<PermissionRequestDto>> ApproveAsync(
@@ -313,6 +526,16 @@ namespace DLPManagementSystem.Service.Service
             {
                 return ApiResponse<PermissionRequestDto>.FailureResponse("Permission request was not found.", "طلب الصلاحية غير موجود");
             }
+
+            // Exact-file path: the request's linked attachment (created in CreateAsync from the source
+            // AuditEvent) carries the file's hash, which scopes the resulting grant to that one file.
+            // Tier path: permissionRequest.ClassificationTier scopes it instead. The two are mutually
+            // exclusive by construction (CreateAsync never sets both), so at most one is non-null here.
+            var fileHash = await _db.PermissionRequestAttachments
+                .AsNoTracking()
+                .Where(x => x.PermissionRequestId == permissionRequest.Id)
+                .Select(x => x.Sha256Hash)
+                .FirstOrDefaultAsync(cancellationToken);
 
             var nowUtc = DateTimeOffset.UtcNow;
 
@@ -348,7 +571,9 @@ namespace DLPManagementSystem.Service.Service
                 permissionRequest.BusinessJustification,
                 reviewedByUserId,
                 permissionRequest.Id,
-                cancellationToken);
+                cancellationToken,
+                fileHash: fileHash,
+                classificationTier: permissionRequest.ClassificationTier);
 
             if (!buildResult.Success)
             {

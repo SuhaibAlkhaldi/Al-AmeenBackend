@@ -1,5 +1,21 @@
 namespace DLPManagementSystem.DTO.AgentFiles
 {
+    // Mirrors CompanyDlp.Contracts.ClassificationTiers on the agent side - string values must stay
+    // identical since grants/requests carry them as plain strings across the backend/agent boundary,
+    // and they must match the AI classifier API's `classification` response values verbatim.
+    public static class ClassificationTiers
+    {
+        public const string Public = "Public";
+        public const string Internal = "Internal";
+        public const string Secret = "Secret";
+        public const string VerySecret = "Very_Secret";
+
+        public static readonly IReadOnlyList<string> Order = [Public, Internal, Secret, VerySecret];
+
+        public static bool IsValidRequestableTier(string? tier) =>
+            tier is Internal or Secret or VerySecret;
+    }
+
     public class FileClassificationRequestDto
     {
         public Guid RequestId { get; set; }

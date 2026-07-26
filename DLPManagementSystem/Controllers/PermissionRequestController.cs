@@ -44,6 +44,22 @@ namespace DLPManagementSystem.Controllers
             return Ok(response);
         }
 
+        [HttpGet("source-event/{correlationId:guid}")]
+        public async Task<IActionResult> GetSourceEventDetails(Guid correlationId, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var userId = User.GetUserId();
+            var userTypeId = User.GetUserTypeId();
+            var response = await _permissionRequestService.GetSourceEventDetailsAsync(organizationId, userId, userTypeId, correlationId, cancellationToken);
+
+            if (!response.Success)
+            {
+                return NotFound(response);
+            }
+
+            return Ok(response);
+        }
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {

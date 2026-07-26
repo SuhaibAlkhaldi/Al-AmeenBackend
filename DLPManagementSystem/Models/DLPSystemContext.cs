@@ -584,9 +584,26 @@ public partial class DLPSystemContext : DbContext
 
         modelBuilder.Entity<PermissionGrant>(entity =>
         {
+            // Unscoped (ordinary) grants: still exactly one active/pending grant per subject+action,
+            // same as before file/tier scoping existed. Narrowed with the FileHash/ClassificationTier
+            // IS NULL filter so it no longer collides with the two scoped indexes below.
             entity.HasIndex(e => new { e.OrganizationId, e.ActionKey, e.SubjectTypeId, e.SubjectId }, "UX_PermissionGrants_Active_Subject_Action")
                 .IsUnique()
-                .HasFilter("([RevokedAtUtc] IS NULL)");
+                .HasFilter("([RevokedAtUtc] IS NULL) AND ([FileHash] IS NULL) AND ([ClassificationTier] IS NULL)");
+
+            // FileHash-scoped grants (browser.upload/browser.drag-drop, exact-file path): at most one
+            // active/pending grant per subject+action+file, but any number of *different* files can
+            // each have their own concurrently-active grant.
+            entity.HasIndex(e => new { e.OrganizationId, e.ActionKey, e.SubjectTypeId, e.SubjectId, e.FileHash }, "UX_PermissionGrants_Active_Subject_Action_FileHash")
+                .IsUnique()
+                .HasFilter("([RevokedAtUtc] IS NULL) AND ([FileHash] IS NOT NULL)");
+
+            // ClassificationTier-scoped grants (tier path): at most one active/pending grant per
+            // subject+action+tier, independent of any FileHash-scoped or unscoped grants the same
+            // subject may also hold for the same action.
+            entity.HasIndex(e => new { e.OrganizationId, e.ActionKey, e.SubjectTypeId, e.SubjectId, e.ClassificationTier }, "UX_PermissionGrants_Active_Subject_Action_Tier")
+                .IsUnique()
+                .HasFilter("([RevokedAtUtc] IS NULL) AND ([ClassificationTier] IS NOT NULL)");
 
             entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
             entity.Property(e => e.CreatedAtUtc).HasDefaultValueSql("(sysutcdatetime())");

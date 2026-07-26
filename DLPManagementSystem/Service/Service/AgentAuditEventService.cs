@@ -106,6 +106,17 @@ namespace DLPManagementSystem.Service.Service
                     .Select(g => new { UserSid = g.Key, EmployeeId = g.First().EmployeeId })
                     .ToDictionaryAsync(x => x.UserSid, x => x.EmployeeId, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
+                // Nothing in this app today actually populates EmployeeWindowsIdentities (no admin UI,
+                // no self-service flow) - the device's currently assigned employee (DeviceUserAssignments,
+                // which the portal's device detail page already manages) is the realistic, already-working
+                // source of truth for "which employee is this device's audit event about", so fall back to
+                // it whenever the SID isn't explicitly mapped.
+                var assignedEmployeeId = await _db.DeviceUserAssignments
+                    .AsNoTracking()
+                    .Where(x => x.DeviceId == deviceId && x.UnassignedAtUtc == null)
+                    .Select(x => (Guid?)x.EmployeeId)
+                    .FirstOrDefaultAsync(cancellationToken);
+
                 var permissionGrantIds = request.Events
                     .Where(x => x.PermissionGrantId.HasValue)
                     .Select(x => x.PermissionGrantId!.Value)
@@ -199,6 +210,10 @@ namespace DLPManagementSystem.Service.Service
                         employeeBySid.TryGetValue(envelope.UserSid, out var foundEmployeeId))
                     {
                         employeeId = foundEmployeeId;
+                    }
+                    else
+                    {
+                        employeeId = assignedEmployeeId;
                     }
 
                     Guid? permissionGrantId = envelope.PermissionGrantId.HasValue &&

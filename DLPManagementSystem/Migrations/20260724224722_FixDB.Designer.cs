@@ -4,6 +4,7 @@ using DLPManagementSystem.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DLPManagementSystem.Migrations
 {
     [DbContext(typeof(DLPSystemContext))]
-    partial class DLPSystemContextModelSnapshot : ModelSnapshot
+    [Migration("20260724224722_FixDB")]
+    partial class FixDB
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1525,10 +1528,6 @@ namespace DLPManagementSystem.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("ClassificationTier")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset")
@@ -1539,10 +1538,6 @@ namespace DLPManagementSystem.Migrations
 
                     b.Property<DateTimeOffset?>("ExpiresAtUtc")
                         .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("FileHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("GrantTypeId")
                         .HasColumnType("int");
@@ -1619,15 +1614,7 @@ namespace DLPManagementSystem.Migrations
 
                     b.HasIndex(new[] { "OrganizationId", "ActionKey", "SubjectTypeId", "SubjectId" }, "UX_PermissionGrants_Active_Subject_Action")
                         .IsUnique()
-                        .HasFilter("([RevokedAtUtc] IS NULL) AND ([FileHash] IS NULL) AND ([ClassificationTier] IS NULL)");
-
-                    b.HasIndex(new[] { "OrganizationId", "ActionKey", "SubjectTypeId", "SubjectId", "FileHash" }, "UX_PermissionGrants_Active_Subject_Action_FileHash")
-                        .IsUnique()
-                        .HasFilter("([RevokedAtUtc] IS NULL) AND ([FileHash] IS NOT NULL)");
-
-                    b.HasIndex(new[] { "OrganizationId", "ActionKey", "SubjectTypeId", "SubjectId", "ClassificationTier" }, "UX_PermissionGrants_Active_Subject_Action_Tier")
-                        .IsUnique()
-                        .HasFilter("([RevokedAtUtc] IS NULL) AND ([ClassificationTier] IS NOT NULL)");
+                        .HasFilter("([RevokedAtUtc] IS NULL)");
 
                     b.ToTable("PermissionGrants");
                 });
@@ -1678,10 +1665,6 @@ namespace DLPManagementSystem.Migrations
 
                     b.Property<DateTimeOffset?>("CancelledAtUtc")
                         .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("ClassificationTier")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
@@ -1785,14 +1768,6 @@ namespace DLPManagementSystem.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("(newsequentialid())");
-
-                    b.Property<string>("Classification")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("ClassificationReasonCode")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("ContentType")
                         .HasMaxLength(150)

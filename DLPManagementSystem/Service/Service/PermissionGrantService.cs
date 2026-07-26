@@ -238,18 +238,28 @@ namespace DLPManagementSystem.Service.Service
             string reason,
             Guid grantedByUserId,
             Guid? sourcePermissionRequestId,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string? fileHash = null,
+            string? classificationTier = null)
         {
             var nowUtc = DateTimeOffset.UtcNow;
 
-            // Guard against stacking a second overlapping grant for the same action/subject — lives here
-            // (rather than in each caller) so every current and future path into a grant creation gets this
-            // protection automatically. The DB's unique index (UX_PermissionGrants_Active_Subject_Action)
-            // blocks inserting a new row whenever ANY non-revoked row exists for this subject+action —
-            // including ones that merely expired without ever being explicitly revoked — so this in-memory
-            // check must agree with that on every non-revoked row, not just Active/Pending ones.
+            // Guard against stacking a second overlapping grant for the same action/subject/scope — lives
+            // here (rather than in each caller) so every current and future path into a grant creation
+            // gets this protection automatically. The DB's three filtered unique indexes
+            // (UX_PermissionGrants_Active_Subject_Action[_FileHash|_Tier]) enforce the same "one
+            // non-revoked row per subject+action+scope" rule at the storage layer — this in-memory check
+            // must agree with them on every non-revoked row, not just Active/Pending ones. Scope equality
+            // (both FileHash and ClassificationTier matching) is what makes an existing grant relevant:
+            // an unscoped, a FileHash="abc", and a ClassificationTier="Secret" grant for the same
+            // employee+action can all coexist, since each is backed by its own unique index.
             var existingGrants = await _db.PermissionGrants
-                .Where(x => x.OrganizationId == organizationId && x.SubjectId == subjectId && x.ActionKey == actionKey && x.RevokedAtUtc == null)
+                .Where(x => x.OrganizationId == organizationId
+                    && x.SubjectId == subjectId
+                    && x.ActionKey == actionKey
+                    && x.RevokedAtUtc == null
+                    && x.FileHash == fileHash
+                    && x.ClassificationTier == classificationTier)
                 .ToListAsync(cancellationToken);
 
             var blockingGrants = existingGrants
@@ -317,6 +327,8 @@ namespace DLPManagementSystem.Service.Service
                 Reason = reason,
                 GrantedByUserId = grantedByUserId,
                 SourcePermissionRequestId = sourcePermissionRequestId,
+                FileHash = fileHash,
+                ClassificationTier = classificationTier,
                 CreatedAtUtc = nowUtc
             };
 

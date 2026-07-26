@@ -20,6 +20,8 @@ namespace DLPManagementSystem.DTO.AgentAuditEvents
         public long? SizeBytes { get; set; }
         public string? Sha256 { get; set; }
         public string? MaskedPath { get; set; }
+        public string? Classification { get; set; }
+        public string? ClassificationReasonCode { get; set; }
     }
 
     public class DestinationContextDto

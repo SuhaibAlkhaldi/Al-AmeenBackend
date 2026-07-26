@@ -4,6 +4,7 @@ using DLPManagementSystem.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DLPManagementSystem.Migrations
 {
     [DbContext(typeof(DLPSystemContext))]
-    partial class DLPSystemContextModelSnapshot : ModelSnapshot
+    [Migration("20260725120959_AddFileClassificationToPermissions")]
+    partial class AddFileClassificationToPermissions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1619,15 +1622,7 @@ namespace DLPManagementSystem.Migrations
 
                     b.HasIndex(new[] { "OrganizationId", "ActionKey", "SubjectTypeId", "SubjectId" }, "UX_PermissionGrants_Active_Subject_Action")
                         .IsUnique()
-                        .HasFilter("([RevokedAtUtc] IS NULL) AND ([FileHash] IS NULL) AND ([ClassificationTier] IS NULL)");
-
-                    b.HasIndex(new[] { "OrganizationId", "ActionKey", "SubjectTypeId", "SubjectId", "FileHash" }, "UX_PermissionGrants_Active_Subject_Action_FileHash")
-                        .IsUnique()
-                        .HasFilter("([RevokedAtUtc] IS NULL) AND ([FileHash] IS NOT NULL)");
-
-                    b.HasIndex(new[] { "OrganizationId", "ActionKey", "SubjectTypeId", "SubjectId", "ClassificationTier" }, "UX_PermissionGrants_Active_Subject_Action_Tier")
-                        .IsUnique()
-                        .HasFilter("([RevokedAtUtc] IS NULL) AND ([ClassificationTier] IS NOT NULL)");
+                        .HasFilter("([RevokedAtUtc] IS NULL)");
 
                     b.ToTable("PermissionGrants");
                 });

@@ -17,6 +17,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Identity;
 using DLPManagementSystem.CompanyDlpDashboard;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -77,6 +78,15 @@ builder.Services.AddScoped<IAlertService, AlertService>();
 builder.Services.AddScoped<IAuditEventService, AuditEventService>();
 builder.Services.AddScoped<IPermissionRequestService, PermissionRequestService>();
 builder.Services.AddScoped<IPermissionGrantService, PermissionGrantService>();
+builder.Services.Configure<FileClassificationApiOptions>(builder.Configuration.GetSection("FileClassificationApi"));
+builder.Services.AddHttpClient("FileClassificationApi", (services, client) =>
+{
+    var options = services.GetRequiredService<IOptions<FileClassificationApiOptions>>().Value;
+    if (!string.IsNullOrWhiteSpace(options.BaseUrl))
+    {
+        client.BaseAddress = new Uri(options.BaseUrl);
+    }
+});
 builder.Services.AddScoped<IFileClassificationService, FileClassificationService>();
 builder.Services.AddScoped<IFileKeyProtectionService, FileKeyProtectionService>();
 builder.Services.AddScoped<IEnrollmentTokenService, EnrollmentTokenService>();

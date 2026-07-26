@@ -67,5 +67,17 @@
         public DateTimeOffset CreatedAtUtc { get; set; }
 
         public DateTimeOffset? UpdatedAtUtc { get; set; }
+
+        // Tier path: set when this request targeted a classification tier rather than a specific file.
+        public string? ClassificationTier { get; set; }
+
+        // Exact-file path: populated from the request's linked PermissionRequestAttachment (created
+        // server-side from the source AuditEvent in CreateAsync). Null for both the tier path and
+        // ordinary action-level requests.
+        public string? FileName { get; set; }
+        public long? FileSizeBytes { get; set; }
+        public string? FileSha256 { get; set; }
+        public string? FileClassification { get; set; }
+        public string? FileClassificationReasonCode { get; set; }
     }
 }

@@ -34,6 +34,16 @@ public partial class PermissionRequestAttachment
     [StringLength(128)]
     public string? Sha256Hash { get; set; }
 
+    // Populated for rows created from an agent-observed blocked attempt (the exact-file request
+    // path): the AI classifier's tier for this file and its reasoning, both looked up server-side
+    // from the source AuditEvent - never trusted from client input. Null for any attachment row
+    // that isn't tied to a classified file.
+    [StringLength(20)]
+    public string? Classification { get; set; }
+
+    [StringLength(500)]
+    public string? ClassificationReasonCode { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     [ForeignKey("OrganizationId")]

@@ -66,6 +66,13 @@ public partial class PermissionRequest
 
     public DateTimeOffset? UpdatedAtUtc { get; set; }
 
+    // Set only for a proactive tier-scoped request (the employee picked a classification tier
+    // instead of pointing at a specific file/event). Null for both the exact-file request path
+    // (file details live on the linked PermissionRequestAttachment instead) and ordinary
+    // action-level requests.
+    [StringLength(20)]
+    public string? ClassificationTier { get; set; }
+
     [ForeignKey("ActionKey")]
     [InverseProperty("PermissionRequests")]
     public virtual PermissionAction ActionKeyNavigation { get; set; } = null!;

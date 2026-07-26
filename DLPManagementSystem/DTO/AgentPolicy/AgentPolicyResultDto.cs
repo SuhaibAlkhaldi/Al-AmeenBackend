@@ -86,6 +86,12 @@
         public DateTimeOffset CreatedAtUtc { get; set; }
         public DateTimeOffset? RevokedAtUtc { get; set; }
         public string? RevokedBy { get; set; }
+
+        // Mirrors CompanyDlp.Contracts.PermissionGrant.FileHash/ClassificationTier - both null for
+        // an ordinary action-level grant. See that type's comment for the exact-file vs tier scoping
+        // rules; the agent-side PermissionEvaluator is what actually interprets these.
+        public string? FileHash { get; set; }
+        public string? ClassificationTier { get; set; }
     }
 
     public class AgentSensitiveRuleDto

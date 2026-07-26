@@ -33,6 +33,18 @@ namespace DLPManagementSystem.Service.Interface
             int callerUserTypeId,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Prefill data for the exact-file request path: looks up the agent-reported AuditEvent by
+        /// CorrelationId and verifies it belongs to the caller's own employee profile before returning
+        /// any file details. Employee-type callers only — same ownership rule as GetByIdAsync.
+        /// </summary>
+        Task<ApiResponse<SourceEventDetailsDto>> GetSourceEventDetailsAsync(
+            Guid organizationId,
+            Guid callerUserId,
+            int callerUserTypeId,
+            Guid correlationId,
+            CancellationToken cancellationToken = default);
+
         Task<ApiResponse<PermissionRequestDto>> CreateAsync(
             Guid organizationId,
             Guid requestedByUserId,
