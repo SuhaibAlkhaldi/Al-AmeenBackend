@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using DLPManagementSystem.Common;
@@ -92,15 +93,29 @@ namespace DLPManagementSystem.Service.Service
                 using var response = await client.SendAsync(httpRequest, timeoutCts.Token);
                 if (!response.IsSuccessStatusCode)
                 {
+                    // HTTP 400 from this API means it looked at the file and declined to score it at
+                    // all (confirmed: it rejects certain extensions outright, e.g. ".bak", with
+                    // {"detail":"File extension .bak is not allowed."}) - that's a permanent verdict
+                    // for this file type, never a transient failure, so the agent's background
+                    // scanner needs a distinct reason code to know not to keep retrying it every tick.
+                    if (response.StatusCode == HttpStatusCode.BadRequest)
+                    {
+                        var body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+                        _logger.LogInformation(
+                            "File classification API rejected {FileName}: {Body}", request.FileName, body);
+                        return BuildResult(request, FileClassificationReasonCodes.AiFileTypeRejected);
+                    }
+
                     _logger.LogWarning(
                         "File classification API returned {StatusCode} for {FileName}.", response.StatusCode, request.FileName);
-                    return null;
+                    return BuildResult(request, FileClassificationReasonCodes.AiApiTransientError);
                 }
 
                 var payload = await response.Content.ReadFromJsonAsync<AiScanResponse>(cancellationToken: timeoutCts.Token);
                 if (payload == null || string.IsNullOrWhiteSpace(payload.Classification))
                 {
-                    return null;
+                    _logger.LogWarning("File classification API returned an empty/malformed payload for {FileName}.", request.FileName);
+                    return BuildResult(request, FileClassificationReasonCodes.AiApiTransientError);
                 }
 
                 var nowUtc = DateTimeOffset.UtcNow;
@@ -120,8 +135,30 @@ namespace DLPManagementSystem.Service.Service
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
             {
                 _logger.LogWarning(exception, "File classification API call failed for {FileName}.", request.FileName);
-                return null;
+                return BuildResult(request, FileClassificationReasonCodes.AiApiTransientError);
             }
+        }
+
+        // Same Classification/IsAllowed/IsSensitive shape as BuildStubResult's non-blocked-extension
+        // branch (Unclassified, allowed, not sensitive) - only the ReasonCode differs, distinguishing
+        // "the AI rejected this file type" from "we couldn't get a real answer" for the agent's
+        // background scanner (see FileClassificationReasonCodes). No caller that only reads
+        // IsAllowed/IsSensitive/Classification observes any behavior change from before this existed.
+        private static FileClassificationResultDto BuildResult(FileClassificationRequestDto request, string reasonCode)
+        {
+            var nowUtc = DateTimeOffset.UtcNow;
+            return new FileClassificationResultDto
+            {
+                RequestId = request.RequestId,
+                IsAllowed = true,
+                IsSensitive = false,
+                Classification = "Unclassified",
+                ReasonCode = reasonCode,
+                Provider = "AiApi",
+                RuleId = null,
+                EvaluatedAtUtc = nowUtc,
+                ValidUntilUtc = nowUtc.AddMinutes(10)
+            };
         }
 
         private static FileClassificationResultDto BuildStubResult(FileClassificationRequestDto request)

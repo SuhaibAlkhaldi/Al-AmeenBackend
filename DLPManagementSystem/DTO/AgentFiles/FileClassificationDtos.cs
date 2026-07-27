@@ -16,6 +16,16 @@ namespace DLPManagementSystem.DTO.AgentFiles
             tier is Internal or Secret or VerySecret;
     }
 
+    // Mirrors CompanyDlp.Contracts.FileClassificationReasonCodes on the agent side - only the two
+    // reason-code string values need to stay identical (the agent's FileInventoryScanner branches on
+    // these to decide whether a background-scanned file's display status is "Failed" - transient,
+    // retried every scan tick - or "Unsupported" - the AI rejected the file type outright, not retried).
+    public static class FileClassificationReasonCodes
+    {
+        public const string AiApiTransientError = "AiApiTransientError";
+        public const string AiFileTypeRejected = "AiFileTypeRejected";
+    }
+
     public class FileClassificationRequestDto
     {
         public Guid RequestId { get; set; }
