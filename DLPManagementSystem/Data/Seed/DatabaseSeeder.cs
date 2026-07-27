@@ -1,4 +1,5 @@
-﻿using DLPManagementSystem.Helper.Hashing;
+using DLPManagementSystem.Helper.Hashing;
+using DLPManagementSystem.Common;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +29,7 @@ namespace DLPManagementSystem.Data.Seed
 
             await SeedPermissionLookupsAsync(cancellationToken);
             await SeedPermissionActionsAsync(cancellationToken);
+            await ConfigureWatermarkActionsAsync(cancellationToken);
 
             await SeedPermissionRequestLookupsAsync(cancellationToken);
 
@@ -264,10 +266,27 @@ namespace DLPManagementSystem.Data.Seed
 
             await AddPermissionActionIfMissing("software.install", "Software", "Software Install", "Block or allow software installation.", "Deny", 140, ct);
             await AddPermissionActionIfMissing("software.execute-unapproved", "Software", "Execute Unapproved Software", "Block or allow unapproved software execution.", "Deny", 150, ct);
+            await AddPermissionActionIfMissing(PermissionActionKeys.WatermarkDisable, "Screen", "Disable Watermark", "Allows the security watermark to be removed from the employee's assigned device.", "Deny", 170, ct);
 
             await AddPermissionActionIfMissing("agent.session", "System", "Agent Session", "Housekeeping events emitted by the agent's own session lifecycle.", "Allow", 160, ct);
         }
 
+        private async Task ConfigureWatermarkActionsAsync(CancellationToken ct)
+        {
+            var disable = await _db.PermissionActions.FirstOrDefaultAsync(x => x.Key == PermissionActionKeys.WatermarkDisable, ct);
+            if (disable is not null)
+            {
+                disable.IsEnabled = true;
+                disable.DisplayName = "Disable Watermark";
+                disable.Description = "Allows the security watermark to be removed from the employee's assigned device.";
+            }
+
+            var deprecatedEnable = await _db.PermissionActions.FirstOrDefaultAsync(x => x.Key == "watermark.enable", ct);
+            if (deprecatedEnable is not null)
+            {
+                deprecatedEnable.IsEnabled = false;
+            }
+        }
         private async Task AddPermissionActionIfMissing(
             string key,
             string categoryName,

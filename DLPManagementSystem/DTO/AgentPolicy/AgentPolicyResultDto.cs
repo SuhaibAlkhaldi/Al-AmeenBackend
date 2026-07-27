@@ -1,4 +1,4 @@
-﻿namespace DLPManagementSystem.DTO.AgentPolicy
+namespace DLPManagementSystem.DTO.AgentPolicy
 {
     public class AgentPolicyResultDto
     {
@@ -26,6 +26,7 @@
         public AgentRuntimePolicyDto Runtime { get; set; } = new();
         public AgentBackendPolicyDto Backend { get; set; } = new();
         public AgentPermissionPolicyDto Permissions { get; set; } = new();
+        public AgentWatermarkPolicyDto Watermark { get; set; } = new();
 
         // Central DLP sensitive content rules sent from backend to Windows Agent.
         // The Windows Agent classifier uses these rules for clipboard.copy-sensitive.
@@ -56,6 +57,11 @@
         public string PolicySigningPublicKeyPem { get; set; } = "";
         public string AuthenticationMode { get; set; } = "DeviceBearerToken";
         public string CredentialName { get; set; } = "agent-access-token";
+    }
+
+    public class AgentWatermarkPolicyDto
+    {
+        public bool Enabled { get; set; } = true;
     }
 
     public class AgentPermissionPolicyDto

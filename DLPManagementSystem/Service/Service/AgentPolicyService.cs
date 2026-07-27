@@ -57,6 +57,7 @@ namespace DLPManagementSystem.Service.Service
 
             var defaultPermissions = await BuildDefaultPermissionsAsync(cancellationToken);
             var grants = await BuildGrantsForDeviceAsync(organizationId, device.Id, nowUtc, cancellationToken);
+            var watermarkEnabled = BuildEffectiveWatermarkEnabled(grants);
 
             var snapshot = BuildPolicySnapshot(
                  latestPolicyVersion.Id,
@@ -65,7 +66,8 @@ namespace DLPManagementSystem.Service.Service
                  deviceId,
                  nowUtc,
                  defaultPermissions,
-                 grants);
+                 grants,
+                 watermarkEnabled);
 
             await DevicePolicyStateUpsert.ApplyAsync(
                 _db,
@@ -178,7 +180,8 @@ namespace DLPManagementSystem.Service.Service
             Guid deviceId,
             DateTimeOffset nowUtc,
             Dictionary<string, bool> defaultPermissions,
-            List<AgentPermissionGrantDto> grants)
+            List<AgentPermissionGrantDto> grants,
+            bool watermarkEnabled)
         {
             return new AgentPolicySnapshotDto
             {
@@ -218,6 +221,7 @@ namespace DLPManagementSystem.Service.Service
                         AuthenticationMode = "DeviceBearerToken",
                         CredentialName = "agent-access-token"
                     },
+                    Watermark = new AgentWatermarkPolicyDto { Enabled = watermarkEnabled },
                     Permissions = new AgentPermissionPolicyDto
                     {
                         DefaultPermissions = defaultPermissions,
@@ -228,6 +232,19 @@ namespace DLPManagementSystem.Service.Service
             };
         }
 
+        // Watermark is protected by default. An effective Allow for this exception removes it;
+        // an effective Deny, expiry, revocation, or no grant leaves it enabled.
+        private static bool BuildEffectiveWatermarkEnabled(List<AgentPermissionGrantDto> grants)
+        {
+            var isExempt = grants
+                .Where(value => value.ActionKey == PermissionActionKeys.WatermarkDisable)
+                .OrderByDescending(value => value.Priority)
+                .ThenByDescending(value => value.CreatedAtUtc)
+                .Select(value => (bool?)value.Allowed)
+                .FirstOrDefault() is true;
+
+            return !isExempt;
+        }
         private static List<AgentSensitiveRuleDto> BuildDefaultSensitiveRules()
         {
             return new List<AgentSensitiveRuleDto>
