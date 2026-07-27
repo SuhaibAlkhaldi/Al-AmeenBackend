@@ -1,4 +1,4 @@
-using DLPManagementSystem.Authentication;
+﻿using DLPManagementSystem.Authentication;
 using DLPManagementSystem.Data.Seed;
 using DLPManagementSystem.Helper.Email;
 using DLPManagementSystem.Helper.Health;
@@ -97,6 +97,7 @@ builder.Services.AddHostedService<AlertEmailNotificationWorker>();
 
 builder.Services.Configure<AuditRetentionOptions>(builder.Configuration.GetSection("AuditRetention"));
 builder.Services.AddHostedService<AuditRetentionWorker>();
+builder.Services.AddHostedService<PermissionGrantTransitionWorker>();
 
 builder.Services.AddDataProtection();
 
