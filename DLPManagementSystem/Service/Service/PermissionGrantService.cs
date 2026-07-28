@@ -1,4 +1,5 @@
 using DLPManagementSystem.Common;
+using DLPManagementSystem.DTO.AgentFiles;
 using DLPManagementSystem.DTO.Permissions.Contracts;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
@@ -364,6 +365,22 @@ namespace DLPManagementSystem.Service.Service
                 return ApiResponse<PermissionGrantDto>.FailureResponse("Permission action was not found.", "إجراء الصلاحية غير موجود");
             }
 
+            if (!string.IsNullOrWhiteSpace(request.ClassificationTier))
+            {
+                if (!request.ActionKey.Equals(PermissionActionKeys.FileDecrypt, StringComparison.OrdinalIgnoreCase))
+                {
+                    return ApiResponse<PermissionGrantDto>.FailureResponse(
+                        "A classification tier can only be set for the file.decrypt action.",
+                        "لا يمكن تحديد مستوى التصنيف إلا لإجراء فك تشفير الملف (file.decrypt)");
+                }
+
+                if (!ClassificationTiers.Order.Contains(request.ClassificationTier))
+                {
+                    return ApiResponse<PermissionGrantDto>.FailureResponse(
+                        "Classification tier is not valid.", "مستوى التصنيف غير صالح");
+                }
+            }
+
             var subjectId = employee.Id.ToString();
 
             // Duplicate-active-grant check now lives inside BuildGrantAsync itself, so it applies here
@@ -394,7 +411,8 @@ namespace DLPManagementSystem.Service.Service
                 request.Reason,
                 grantedByUserId,
                 sourcePermissionRequestId: null,
-                cancellationToken);
+                cancellationToken,
+                classificationTier: request.ClassificationTier);
 
             if (!buildResult.Success)
             {
@@ -513,7 +531,8 @@ namespace DLPManagementSystem.Service.Service
                 CreatedAtUtc = grant.CreatedAtUtc,
                 RevokedAtUtc = grant.RevokedAtUtc,
                 RevocationReason = grant.RevocationReason,
-                RevokedByUserName = grant.RevokedByUser?.FullName
+                RevokedByUserName = grant.RevokedByUser?.FullName,
+                ClassificationTier = grant.ClassificationTier
             };
         }
     }
