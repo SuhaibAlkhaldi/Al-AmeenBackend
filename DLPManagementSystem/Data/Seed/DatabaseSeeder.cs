@@ -38,10 +38,7 @@ namespace DLPManagementSystem.Data.Seed
             await SeedAlertLookupsAsync(cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
-            if (_environment.IsDevelopment())
-            {
-                await SeedDevelopmentOrganizationAndEnrollmentTokenAsync(cancellationToken);
-            }
+            await SeedDevelopmentOrganizationAndEnrollmentTokenAsync(cancellationToken);
         }
 
         private async Task SeedRolesAsync(CancellationToken ct)
@@ -608,6 +605,42 @@ namespace DLPManagementSystem.Data.Seed
 
                 _db.Users.Add(devAdmin);
                 await _db.SaveChangesAsync(ct);
+            }
+
+            var employeeRole = await _db.Roles.FirstOrDefaultAsync(x => x.Name == "Employee", ct);
+            var employeeUserType = await _db.UserTypes.FirstOrDefaultAsync(x => x.Name == "Employee", ct);
+
+            if (employeeRole != null && employeeUserType != null && activeUserStatus != null)
+            {
+                var testEmployee = await _db.Users
+                    .FirstOrDefaultAsync(x =>
+                        x.OrganizationId == organization.Id &&
+                        x.Email == "test.employee@companydlp.local",
+                        ct);
+
+                if (testEmployee == null)
+                {
+                    testEmployee = new User
+                    {
+                        Id = Guid.NewGuid(),
+                        OrganizationId = organization.Id,
+                        FullName = "Test Employee",
+                        Email = "test.employee@companydlp.local",
+                        PasswordHash = string.Empty,
+                        UserTypeId = employeeUserType.Id,
+                        RoleId = employeeRole.Id,
+                        StatusId = activeUserStatus.Id,
+
+                        IsEmailVerified = true,
+                        LastLoginAtUtc = null,
+                        CreatedAtUtc = nowUtc,
+                        UpdatedAtUtc = nowUtc
+                    };
+                    testEmployee.PasswordHash = _passwordService.HashPassword(testEmployee, "Employee123!");
+
+                    _db.Users.Add(testEmployee);
+                    await _db.SaveChangesAsync(ct);
+                }
             }
 
             const string plainToken = "DEV-ENROLLMENT-TOKEN";

@@ -1,4 +1,4 @@
-﻿using DLPManagementSystem.Authentication;
+using DLPManagementSystem.Authentication;
 using DLPManagementSystem.Data.Seed;
 using DLPManagementSystem.Helper.Email;
 using DLPManagementSystem.Helper.Health;
@@ -147,14 +147,11 @@ builder.Services.AddCors(options =>
     options.AddPolicy("DlpDashboardDevCors", policy =>
     {
         policy
-            .WithOrigins("http://localhost:4200")
+            .AllowAnyOrigin()
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
-
-
-
 
 builder.Services
     .AddHealthChecks()
@@ -170,11 +167,11 @@ var app = builder.Build();
 
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+//if (app.Environment.IsDevelopment())
+//{
+app.UseSwagger();
+app.UseSwaggerUI();
+//}
 
 // Self-hosted Chrome/Edge extension update manifest + .crx (ExtensionInstallForcelist points here).
 // No auth: the browser updater doesn't send credentials. Deploy by copying
@@ -182,11 +179,16 @@ if (app.Environment.IsDevelopment())
 var extensionContentTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 extensionContentTypes.Mappings[".crx"] = "application/x-chrome-extension";
 extensionContentTypes.Mappings[".xml"] = "application/xml";
+var extensionsPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "extensions");
+if (!Directory.Exists(extensionsPath))
+{
+    Directory.CreateDirectory(extensionsPath);
+}
+
 app.UseStaticFiles(new StaticFileOptions
 {
     RequestPath = "/extensions",
-    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
-        Path.Combine(app.Environment.ContentRootPath, "wwwroot", "extensions")),
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(extensionsPath),
     ContentTypeProvider = extensionContentTypes,
     ServeUnknownFileTypes = false
 });
