@@ -144,12 +144,27 @@ builder.Services.AddScoped<IDlpDashboardQueryService, SqlDlpDashboardQueryServic
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("DlpDashboardDevCors", policy =>
+    // This was AllowAnyOrigin() - almost certainly a quick fix for a real CORS error hit while
+    // connecting the deployed frontend (161.97.90.171:1200) to this backend, since the previous
+    // policy only ever allowed http://localhost:4200 and was never updated for the real deployed
+    // origin. AllowAnyOrigin() on an admin API that issues Bearer tokens is too broad - any site
+    // can call these endpoints cross-origin. Config-driven instead: appsettings.Development.json
+    // keeps the dev-server origin, appsettings.Production.json carries the real deployed frontend
+    // origin - update it there (or via the CORS__AllowedOrigins__0 env var) if the frontend origin
+    // ever changes, instead of hardcoding it here again.
+    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+    options.AddPolicy("DlpDashboardCors", policy =>
     {
-        policy
-            .AllowAnyOrigin()
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        if (allowedOrigins is { Length: > 0 })
+        {
+            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+        }
+        else
+        {
+            // Nothing configured anywhere - fail closed to the known-safe local dev origin
+            // rather than silently allowing every origin.
+            policy.WithOrigins("http://localhost:4200").AllowAnyHeader().AllowAnyMethod();
+        }
     });
 });
 
@@ -214,7 +229,7 @@ static async Task WriteHealthResponseAsync(HttpContext context, HealthReport rep
     await context.Response.WriteAsync(JsonSerializer.Serialize(response));
 }
 
-app.UseCors("DlpDashboardDevCors");
+app.UseCors("DlpDashboardCors");
 
 app.UseHttpsRedirection();
 
