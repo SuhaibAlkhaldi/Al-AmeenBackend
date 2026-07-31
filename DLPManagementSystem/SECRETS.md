@@ -1,5 +1,30 @@
 # Local secrets
 
+## STOP - if you're reading this because the server won't start at all (PolicySigning:PrivateKeyPem error)
+`Program.cs` now refuses to start in the Production environment if `PolicySigning:PrivateKeyPem` is
+missing or doesn't parse as a valid ECDSA private key. This is the key this backend uses to sign every
+policy snapshot (permission grants, revocations, watermark toggles, etc.) sent to enrolled Windows
+agents — a Production-installed device is configured to reject any policy that isn't signed with the
+matching key, so without this, every policy push from this backend would silently fail from that
+point on (or, on a Development-configured device, be silently accepted unsigned — neither is safe).
+
+Generate a real ECDSA P-256 keypair (reuse the script already in the agent repo, don't write a new
+one):
+```
+win-form/Al-Ameen-windows/scripts/generate-policy-signing-keys.ps1
+```
+This produces `company-dlp-policy-private.pem` and `company-dlp-policy-public.pem`. Set the **private**
+key here, via an environment variable — never commit it:
+```
+PolicySigning__PrivateKeyPem=<contents of company-dlp-policy-private.pem>
+```
+The **public** key goes to enrolled Windows agents at install time via `install-production.ps1
+-PolicySigningPublicKeyPemPath <path to company-dlp-policy-public.pem>` — that distribution mechanism
+already exists; this backend only needed the matching private key to actually sign with. If you rotate
+this key, every currently-enrolled Production agent needs its local public key updated too (via a
+re-install or an equivalent config push), or it will reject every subsequent policy update as
+`InvalidPolicySignature` until it is.
+
 ## STOP - if you're reading this because the server won't start at all (Jwt:SecretKey error)
 `Program.cs` now refuses to start in the Production environment if `Jwt:SecretKey` is still the
 committed placeholder or shorter than 32 characters. This is intentional - the committed value in

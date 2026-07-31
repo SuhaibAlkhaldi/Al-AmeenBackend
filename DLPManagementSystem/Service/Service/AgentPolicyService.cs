@@ -9,10 +9,12 @@ namespace DLPManagementSystem.Service.Service
     public class AgentPolicyService : IAgentPolicyService
     {
         private readonly DLPSystemContext _db;
+        private readonly IPolicySigningService _policySigningService;
 
-        public AgentPolicyService(DLPSystemContext db)
+        public AgentPolicyService(DLPSystemContext db, IPolicySigningService policySigningService)
         {
             _db = db;
+            _policySigningService = policySigningService;
         }
 
         public async Task<ApiResponse<AgentPolicyResultDto>> GetPolicyAsync(
@@ -154,7 +156,7 @@ namespace DLPManagementSystem.Service.Service
                     GrantedBy = g.GrantedByName,
                     CreatedAtUtc = g.CreatedAtUtc,
                     RevokedAtUtc = null,
-                    RevokedBy = null,
+                    RevokedBy = "",
                     FileHash = g.FileHash,
                     ClassificationTier = g.ClassificationTier
                 })
@@ -177,7 +179,7 @@ namespace DLPManagementSystem.Service.Service
                 StringComparer.OrdinalIgnoreCase);
         }
 
-        private static AgentPolicySnapshotDto BuildPolicySnapshot(
+        private AgentPolicySnapshotDto BuildPolicySnapshot(
             Guid policyId,
             long versionNumber,
             Guid organizationId,
@@ -187,7 +189,13 @@ namespace DLPManagementSystem.Service.Service
             List<AgentPermissionGrantDto> grants,
             bool watermarkEnabled)
         {
-            return new AgentPolicySnapshotDto
+            // Runtime/Backend below are agent-local-only concerns (see PolicyStore.
+            // PreserveLocalOnlySections on the agent side) - left at their own honest defaults rather
+            // than fabricated values this backend has no authority over. TenantId is the one real,
+            // backend-known fact worth actually sending in Backend; everything else there is just
+            // "what this section defaults to," present only so the signed payload's shape matches
+            // what the agent reconstructs.
+            var snapshot = new AgentPolicySnapshotDto
             {
                 PolicyId = policyId,
                 Version = versionNumber,
@@ -195,35 +203,14 @@ namespace DLPManagementSystem.Service.Service
                 DeviceId = deviceId,
                 IssuedAtUtc = nowUtc,
                 ExpiresAtUtc = nowUtc.AddDays(7),
-                SignatureAlgorithm = "DEVELOPMENT",
-                SignatureBase64 = "DEVELOPMENT-UNSIGNED",
                 Policy = new AgentDlpPolicyDto
                 {
                     PolicyVersion = $"central-{versionNumber}",
                     Enabled = true,
-                    Runtime = new AgentRuntimePolicyDto
-                    {
-                        Mode = "Development",
-                        PersistentProtection = false,
-                        PolicyReapplySeconds = 15,
-                        KeepSessionAgentRunning = true,
-                        SessionAgentPollSeconds = 5
-                    },
+                    Runtime = new AgentRuntimePolicyDto(),
                     Backend = new AgentBackendPolicyDto
                     {
-                        Enabled = true,
-                        TenantId = organizationId,
-                        Mode = "Development",
-                        BaseUrl = "https://localhost:7008",
-                        RequestTimeoutSeconds = 15,
-                        AuditBatchSize = 100,
-                        AuditSyncSeconds = 3,
-                        PolicySyncSeconds = 10,
-                        HeartbeatSeconds = 15,
-                        AllowUnsignedDevelopmentPolicy = true,
-                        PolicySigningPublicKeyPem = "",
-                        AuthenticationMode = "DeviceBearerToken",
-                        CredentialName = "agent-access-token"
+                        TenantId = organizationId
                     },
                     Watermark = new AgentWatermarkPolicyDto { Enabled = watermarkEnabled },
                     Permissions = new AgentPermissionPolicyDto
@@ -234,6 +221,11 @@ namespace DLPManagementSystem.Service.Service
                     SensitiveRules = BuildDefaultSensitiveRules()
                 }
             };
+
+            var (algorithm, signatureBase64) = _policySigningService.Sign(snapshot);
+            snapshot.SignatureAlgorithm = algorithm;
+            snapshot.SignatureBase64 = signatureBase64;
+            return snapshot;
         }
 
         // Watermark is protected by default. An effective Allow for this exception removes it;
