@@ -110,6 +110,21 @@ var jwtSection = builder.Configuration.GetSection("Jwt");
 var jwtSecretKey = jwtSection["SecretKey"]
     ?? throw new InvalidOperationException("Jwt:SecretKey configuration is missing.");
 
+// Fail closed: refuse to start in Production with the shipped placeholder (or anything too short
+// to be a real key). Without this, "forgot to set the env var" silently ships a backend that signs
+// SuperAdmin bearer tokens with a secret that's sitting in plain text in the public source tree -
+// anyone who reads the repo can forge a valid token for any role. Documentation alone (SECRETS.md)
+// isn't enough here, unlike ConnectionStrings/ApiKey, because there's no safe default to fall back
+// to - a JWT signing key either is the real secret or it's a vulnerability.
+if (builder.Environment.IsProduction() &&
+    (jwtSecretKey == "CHANGE_THIS_TO_A_LONG_SECURE_SECRET_KEY_32_CHARS_MINIMUM" || jwtSecretKey.Length < 32))
+{
+    throw new InvalidOperationException(
+        "Jwt:SecretKey is still the placeholder (or shorter than 32 characters) while running in " +
+        "the Production environment. Set a real, unique secret via the Jwt__SecretKey environment " +
+        "variable before starting this process - see SECRETS.md.");
+}
+
 builder.Services
     .AddAuthentication(options =>
     {
@@ -182,11 +197,11 @@ var app = builder.Build();
 
 
 // Configure the HTTP request pipeline.
-//if (app.Environment.IsDevelopment())
-//{
-app.UseSwagger();
-app.UseSwaggerUI();
-//}
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 // Self-hosted Chrome/Edge extension update manifest + .crx (ExtensionInstallForcelist points here).
 // No auth: the browser updater doesn't send credentials. Deploy by copying

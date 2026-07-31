@@ -38,7 +38,18 @@ namespace DLPManagementSystem.Data.Seed
             await SeedAlertLookupsAsync(cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
-            await SeedDevelopmentOrganizationAndEnrollmentTokenAsync(cancellationToken);
+
+            // Dev-only convenience data - a login-ready admin/employee account and a reusable
+            // enrollment token - must never be created outside Development. This used to run
+            // unconditionally, including in Production, which meant a publicly-known
+            // email/password pair (dev.admin@companydlp.local / DevAdmin123!) had SuperAdmin
+            // access on every real deployment, and a 100-use, 1-year enrollment token
+            // (DEV-ENROLLMENT-TOKEN) could enroll arbitrary devices. _environment was already
+            // injected as if this guard was intended - it's now actually wired up.
+            if (_environment.IsDevelopment())
+            {
+                await SeedDevelopmentOrganizationAndEnrollmentTokenAsync(cancellationToken);
+            }
         }
 
         private async Task SeedRolesAsync(CancellationToken ct)

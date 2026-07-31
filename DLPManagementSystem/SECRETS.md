@@ -1,5 +1,21 @@
 # Local secrets
 
+## STOP - if you're reading this because the server won't start at all (Jwt:SecretKey error)
+`Program.cs` now refuses to start in the Production environment if `Jwt:SecretKey` is still the
+committed placeholder or shorter than 32 characters. This is intentional - the committed value in
+`appsettings.json` (`CHANGE_THIS_TO_A_LONG_SECURE_SECRET_KEY_32_CHARS_MINIMUM`) must never be what
+actually signs tokens in production, because anyone who reads this repo could forge a valid
+`SuperAdmin` bearer token with it. Generate a real, unique secret (at least 32 random characters -
+e.g. `openssl rand -base64 48`) and set it via an environment variable, the same pattern as the
+connection string below:
+```
+Jwt__SecretKey=<the real, random, 32+ character secret>
+```
+Set this wherever the backend process actually starts on the server, then restart it. If you rotate
+this value later, every existing bearer token becomes invalid immediately (all users/devices have to
+log in / re-enroll again) - so treat it as a real secret, but don't be afraid to rotate it once, now,
+if there's any chance the placeholder was ever actually live.
+
 ## STOP - if you're reading this because the server won't connect to the database
 This file was just restored to its safe committed default
 (`Server=127.0.0.1,1433;...Trusted_Connection=True...`) after a real production SQL credential
@@ -17,6 +33,26 @@ Set this in whatever actually starts the backend process on the server (a system
 IIS site's environment variables, a supervisor/pm2 config, etc. — check how the process is actually being
 started there) before restarting with this updated code, or the app will fall back to the safe local default
 above and fail to reach the real database.
+
+## STOP - cleanup needed on the real production database, not just this repo
+The code fix above only stops `dev.admin@companydlp.local` / `test.employee@companydlp.local` / the
+`DEV-ENROLLMENT-TOKEN` enrollment token from being (re-)created going forward. It does **not** remove
+them if a previous startup already created them in the real production database - which is very
+likely, since this seeding ran unconditionally on every startup until now. Do this on the real
+server, in this order:
+
+1. **First, make sure you have a real admin account that isn't `dev.admin`.** If `dev.admin@companydlp.local`
+   is the only account you currently log in with, log in with it one more time, go to the **Users**
+   page, and create a brand-new `SuperAdmin` user with a strong unique password. Log out and confirm
+   you can log back in with the new account before doing anything else below - don't lock yourself out.
+2. Back in **Users**, find `dev.admin@companydlp.local` and `test.employee@companydlp.local` and
+   either disable or delete both.
+3. Go to **Device Enrollment Tokens** (or query the `AgentEnrollmentTokens` table directly) and revoke
+   any token named "Development Enrollment Token" / whose plaintext was `DEV-ENROLLMENT-TOKEN`. If
+   any devices were enrolled through it that you don't recognize, check the **Devices** page for
+   unexpected entries.
+4. Redeploy this backend with the code changes in this update (the seeding guard + the Swagger fix +
+   the JWT fail-closed check) so this can't silently happen again.
 
 ## FileClassificationApi:ApiKey
 A real secret — `appsettings.json` intentionally leaves it blank and it must never contain a real value in
