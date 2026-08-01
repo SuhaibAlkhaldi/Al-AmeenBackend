@@ -7,6 +7,7 @@ using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.BackgroundServices;
 using DLPManagementSystem.Service.Interface;
 using DLPManagementSystem.Service.Service;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 using System.Text.Json;
@@ -101,7 +102,21 @@ builder.Services.Configure<AuditRetentionOptions>(builder.Configuration.GetSecti
 builder.Services.AddHostedService<AuditRetentionWorker>();
 builder.Services.AddHostedService<PermissionGrantTransitionWorker>();
 
-builder.Services.AddDataProtection();
+// Explicit persistence + a stable application name: without these, ASP.NET Core's default Data
+// Protection keyring can differ across redeploys or across instances, silently breaking every
+// existing IDataProtector.Unwrap call (FileKeyProtectionService uses this to unwrap file encryption
+// keys) as soon as the keyring changes - previously wrapped keys become permanently unwrappable.
+// KeyStoragePath defaults to a location outside this app's own deployment directory specifically so
+// a redeploy (which typically replaces the deployment directory wholesale) doesn't lose the keyring;
+// see SECRETS.md if that directory needs to be created/made writable on the actual server ahead of time.
+var dataProtectionKeyStoragePath = builder.Configuration["DataProtection:KeyStoragePath"];
+var dataProtectionKeyDirectory = string.IsNullOrWhiteSpace(dataProtectionKeyStoragePath)
+    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "DLPManagementSystem", "DataProtectionKeys")
+    : dataProtectionKeyStoragePath;
+
+builder.Services.AddDataProtection()
+    .SetApplicationName("DLPManagementSystem")
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyDirectory));
 
 builder.Services.AddDbContext<DLPSystemContext>(options =>
 {

@@ -4,6 +4,7 @@ using DLPManagementSystem.Helper.Hashing;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DLPManagementSystem.Service.Service
 {
@@ -12,10 +13,12 @@ namespace DLPManagementSystem.Service.Service
         private static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromDays(180);
 
         private readonly DLPSystemContext _db;
+        private readonly ILogger<AgentEnrollmentService> _logger;
 
-        public AgentEnrollmentService(DLPSystemContext db)
+        public AgentEnrollmentService(DLPSystemContext db, ILogger<AgentEnrollmentService> logger)
         {
             _db = db;
+            _logger = logger;
         }
 
         public async Task<ApiResponse<AgentEnrollResponseDto>> Enroll(AgentEnrollRequestDto request, CancellationToken cancellationToken = default)
@@ -142,8 +145,11 @@ namespace DLPManagementSystem.Service.Service
                     "Agent enrolled successfully.",
                     "تم تسجيل الجهاز بنجاح");
             }
-            catch (Exception)
+            catch (Exception exception)
             {
+                _logger.LogError(exception,
+                    "Unexpected error while enrolling device {DeviceId} for organization {OrganizationId}.",
+                    request?.DeviceId, request?.TenantId);
                 return ApiResponse<AgentEnrollResponseDto>.FailureResponse(
                     "Unexpected error occurred while enrolling agent.",
                     "حدث خطأ غير متوقع أثناء تسجيل الجهاز");

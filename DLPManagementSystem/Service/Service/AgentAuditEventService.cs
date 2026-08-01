@@ -4,6 +4,7 @@ using DLPManagementSystem.DTO.AgentAuditEvents;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DLPManagementSystem.Service.Service
 {
@@ -20,10 +21,12 @@ namespace DLPManagementSystem.Service.Service
         };
 
         private readonly DLPSystemContext _db;
+        private readonly ILogger<AgentAuditEventService> _logger;
 
-        public AgentAuditEventService(DLPSystemContext db)
+        public AgentAuditEventService(DLPSystemContext db, ILogger<AgentAuditEventService> logger)
         {
             _db = db;
+            _logger = logger;
         }
 
         public async Task<ApiResponse<AgentAuditBatchResultDto>> ReceiveAuditEventBatchAsync(
@@ -237,7 +240,23 @@ namespace DLPManagementSystem.Service.Service
                         eventSchemaVersion = envelope.EventSchemaVersion,
                         osVersion = envelope.OsVersion,
                         isDevelopmentEvent = envelope.IsDevelopmentEvent,
-                        // TODO: verify integrityHash once the agent's signing/hash algorithm is documented.
+                        // TODO: the agent DOES compute this meaningfully - CompanyDlp.Service.
+                        // SecurityEventFactory.ComputeIntegrityHash hashes the envelope with SHA-256 over
+                        // its own System.Text.Json serialization (envelope re-serialized with
+                        // IntegrityHash temporarily blanked, CompanyDlp.Contracts.JsonDefaults.Options),
+                        // and CompanyDlp.AdminApi.Services.AuditIntegrityValidator (unused - AdminApi
+                        // isn't deployed, see the other out-of-scope notes about it) shows the matching
+                        // verification shape. Not wired up here yet because doing it correctly requires
+                        // the same kind of byte-for-byte DTO parity fix already done once for policy
+                        // signing (see AgentPolicyResultDto's comments) - SecurityEventEnvelopeDto today
+                        // has different nullability/defaults than CompanyDlp.Contracts.SecurityEventEnvelope
+                        // in several fields (UserSid, MachineName, WindowsSessionId, OsVersion, Details,
+                        // etc.), so recomputing the hash against this DTO's re-serialization would not
+                        // match the agent's original hash even for an untampered event - a rushed fix here
+                        // risks flagging every legitimate audit event as tampered. Also still undecided:
+                        // what should happen on a genuine mismatch (reject the event? flag and keep it?) -
+                        // that's a product decision, not just a wiring exercise. Storing the raw value
+                        // unverified for now; treat real verification as its own follow-up task.
                         integrityHash = envelope.IntegrityHash,
                         rawReasonCode = reasonCodeId == null ? envelope.ReasonCode : null,
                         rawPermissionGrantId = permissionGrantId == null ? envelope.PermissionGrantId : null
@@ -296,8 +315,11 @@ namespace DLPManagementSystem.Service.Service
                     "Audit event batch processed.",
                     "تمت معالجة دفعة الأحداث");
             }
-            catch (Exception)
+            catch (Exception exception)
             {
+                _logger.LogError(exception,
+                    "Unexpected error while receiving an audit event batch for organization {OrganizationId}, device {DeviceId}.",
+                    organizationId, deviceId);
                 return ApiResponse<AgentAuditBatchResultDto>.FailureResponse(
                     "Unexpected error occurred while receiving audit events.",
                     "حدث خطأ غير متوقع أثناء استلام الأحداث");

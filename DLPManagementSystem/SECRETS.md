@@ -1,5 +1,24 @@
 # Local secrets
 
+## DataProtection:KeyStoragePath
+Not a secret, but a real availability concern if left unset on the actual server. `Program.cs` now
+configures `AddDataProtection()` with `.SetApplicationName("DLPManagementSystem")` and
+`.PersistKeysToFileSystem(...)` - `FileKeyProtectionService` depends on the Data Protection keyring
+staying stable to `Unwrap` file encryption keys that were `Wrap`ped earlier; if the keyring changes
+(which happens by default with no explicit persistence configured, e.g. across redeploys or between
+multiple instances), every previously-wrapped file key becomes permanently unwrappable.
+
+If `DataProtection:KeyStoragePath` is left blank (the committed default), the app falls back to
+`%ProgramData%\DLPManagementSystem\DataProtectionKeys` (Windows) - deliberately **outside** this
+app's own deployment directory, so a redeploy (which typically replaces the deployment directory
+wholesale) doesn't wipe the keyring with it. On a Linux server, override this explicitly via the
+`DataProtection__KeyStoragePath` environment variable to a real, persistent, writable path (e.g.
+`/var/lib/dlpmanagementsystem/dataprotection-keys`) - the built-in Windows-style default won't resolve
+to anything writable there. Whatever path is chosen, make sure it exists and is writable by the
+account the server process actually runs as *before* the first deploy with this change, and back it
+up like any other persistent server state - losing it has the same effect as a keyring rotation (every
+wrapped file key becomes unrecoverable).
+
 ## STOP - if you're reading this because the server won't start at all (PolicySigning:PrivateKeyPem error)
 `Program.cs` now refuses to start in the Production environment if `PolicySigning:PrivateKeyPem` is
 missing or doesn't parse as a valid ECDSA private key. This is the key this backend uses to sign every
