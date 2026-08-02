@@ -85,6 +85,8 @@ namespace DLPManagementSystem.Service.Service
                     AlertLevelName = x.AlertLevel.Name,
                     AlertStatusId = x.AlertStatusId,
                     AlertStatusName = x.AlertStatus.Name,
+                    DeviceName = x.AuditEvent.Device.MachineName,
+                    EmployeeName = x.AuditEvent.Employee != null ? x.AuditEvent.Employee.DisplayName : null,
                     AssignedToUserId = x.AssignedToUserId,
                     AssignedToUserName = x.AssignedToUser != null ? x.AssignedToUser.FullName : null,
                     CreatedAtUtc = x.CreatedAtUtc,
@@ -160,6 +162,8 @@ namespace DLPManagementSystem.Service.Service
             var alert = await _db.Alerts
                 .Include(x => x.AlertLevel)
                 .Include(x => x.AlertStatus)
+                .Include(x => x.AuditEvent).ThenInclude(x => x.Device)
+                .Include(x => x.AuditEvent).ThenInclude(x => x.Employee)
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
             if (alert == null)
@@ -186,6 +190,8 @@ namespace DLPManagementSystem.Service.Service
             var alert = await _db.Alerts
                 .Include(x => x.AlertLevel)
                 .Include(x => x.AssignedToUser)
+                .Include(x => x.AuditEvent).ThenInclude(x => x.Device)
+                .Include(x => x.AuditEvent).ThenInclude(x => x.Employee)
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
             if (alert == null)
@@ -257,7 +263,7 @@ namespace DLPManagementSystem.Service.Service
             writer.NewLine = "\r\n";
 
             await writer.WriteLineAsync(CsvWriterHelper.BuildRow(
-                "Title", "Level", "Status", "AssignedTo", "CreatedAtUtc", "ClosedAtUtc", "Description", "ActionKey"));
+                "Title", "Level", "Status", "Device", "Employee", "AssignedTo", "CreatedAtUtc", "ClosedAtUtc", "Description", "ActionKey"));
 
             var rows = query
                 .OrderByDescending(x => x.CreatedAtUtc)
@@ -267,6 +273,8 @@ namespace DLPManagementSystem.Service.Service
                     x.Title,
                     LevelName = x.AlertLevel.Name,
                     StatusName = x.AlertStatus.Name,
+                    DeviceName = x.AuditEvent.Device.MachineName,
+                    EmployeeName = x.AuditEvent.Employee != null ? x.AuditEvent.Employee.DisplayName : null,
                     AssignedToName = x.AssignedToUser != null ? x.AssignedToUser.FullName : null,
                     x.CreatedAtUtc,
                     x.ClosedAtUtc,
@@ -281,6 +289,8 @@ namespace DLPManagementSystem.Service.Service
                     item.Title,
                     item.LevelName,
                     item.StatusName,
+                    item.DeviceName,
+                    item.EmployeeName ?? string.Empty,
                     item.AssignedToName ?? string.Empty,
                     item.CreatedAtUtc.ToString("o"),
                     item.ClosedAtUtc?.ToString("o") ?? string.Empty,
@@ -303,6 +313,8 @@ namespace DLPManagementSystem.Service.Service
                 AlertLevelName = alert.AlertLevel.Name,
                 AlertStatusId = alert.AlertStatusId,
                 AlertStatusName = alert.AlertStatus?.Name ?? string.Empty,
+                DeviceName = alert.AuditEvent.Device.MachineName,
+                EmployeeName = alert.AuditEvent.Employee?.DisplayName,
                 AssignedToUserId = alert.AssignedToUserId,
                 AssignedToUserName = assignedToUserName,
                 CreatedAtUtc = alert.CreatedAtUtc,
