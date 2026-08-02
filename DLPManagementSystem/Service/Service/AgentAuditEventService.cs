@@ -33,10 +33,21 @@ namespace DLPManagementSystem.Service.Service
             Guid organizationId,
             Guid deviceId,
             AgentAuditBatchRequestDto request,
+            JsonElement rawBody,
             CancellationToken cancellationToken = default)
         {
             try
             {
+                // Correlated with request.Events by array index below - System.Text.Json binds a JSON
+                // array to a List<T> element-for-element in order (a malformed element fails the whole
+                // bind rather than being silently dropped), so index correlation is safe. Falls back to
+                // an empty list - not a thrown exception - if "events" is missing/not an array for any
+                // reason, since a raw-body shape surprise shouldn't take down ingestion; every event just
+                // gets IntegrityVerified = null (not evaluated) in that case.
+                var rawEvents = rawBody.TryGetProperty("events", out var rawEventsProperty)
+                    && rawEventsProperty.ValueKind == JsonValueKind.Array
+                        ? rawEventsProperty.EnumerateArray().ToList()
+                        : new List<JsonElement>();
                 if (request.TenantId != organizationId || request.DeviceId != deviceId)
                 {
                     return ApiResponse<AgentAuditBatchResultDto>.FailureResponse(
@@ -155,11 +166,25 @@ namespace DLPManagementSystem.Service.Service
 
                 var canCreateAlerts = newAlertStatusId.HasValue && highAlertLevelId.HasValue;
 
+                // A flagged integrity mismatch is more significant than an ordinary Block decision - it
+                // suggests a compromised or malfunctioning agent, not just a normal policy denial - so it
+                // always raises a Critical alert regardless of the event's own decision, independent of
+                // (and in addition to) the Block-decision alert below.
+                var criticalAlertLevelId = await _db.AlertLevels
+                    .AsNoTracking()
+                    .Where(x => x.Name == "Critical")
+                    .Select(x => (int?)x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                var canCreateCriticalAlerts = newAlertStatusId.HasValue && criticalAlertLevelId.HasValue;
+
                 var nowUtc = DateTimeOffset.UtcNow;
                 var seenInBatch = new HashSet<Guid>();
 
-                foreach (var envelope in request.Events)
+                for (var eventIndex = 0; eventIndex < request.Events.Count; eventIndex++)
                 {
+                    var envelope = request.Events[eventIndex];
+
                     if (existingEventIdSet.Contains(envelope.EventId) || !seenInBatch.Add(envelope.EventId))
                     {
                         result.DuplicateEventIds.Add(envelope.EventId);
@@ -224,6 +249,14 @@ namespace DLPManagementSystem.Service.Service
                             ? envelope.PermissionGrantId
                             : null;
 
+                    // Verified against the RAW wire bytes for this event (see AuditIntegrityVerifier),
+                    // not a reconstructed SecurityEventEnvelopeDto - deliberately sidesteps the DTO-parity
+                    // bug class already found once for policy signing. Per product decision: a mismatch
+                    // never blocks ingestion, it's just flagged (IntegrityVerified = false) for review.
+                    var integrityVerified = eventIndex < rawEvents.Count
+                        ? AuditIntegrityVerifier.Verify(rawEvents[eventIndex])
+                        : null;
+
                     // Fields without a dedicated column on AuditEvent are preserved here for full fidelity.
                     var metadata = new
                     {
@@ -240,23 +273,6 @@ namespace DLPManagementSystem.Service.Service
                         eventSchemaVersion = envelope.EventSchemaVersion,
                         osVersion = envelope.OsVersion,
                         isDevelopmentEvent = envelope.IsDevelopmentEvent,
-                        // TODO: the agent DOES compute this meaningfully - CompanyDlp.Service.
-                        // SecurityEventFactory.ComputeIntegrityHash hashes the envelope with SHA-256 over
-                        // its own System.Text.Json serialization (envelope re-serialized with
-                        // IntegrityHash temporarily blanked, CompanyDlp.Contracts.JsonDefaults.Options),
-                        // and CompanyDlp.AdminApi.Services.AuditIntegrityValidator (unused - AdminApi
-                        // isn't deployed, see the other out-of-scope notes about it) shows the matching
-                        // verification shape. Not wired up here yet because doing it correctly requires
-                        // the same kind of byte-for-byte DTO parity fix already done once for policy
-                        // signing (see AgentPolicyResultDto's comments) - SecurityEventEnvelopeDto today
-                        // has different nullability/defaults than CompanyDlp.Contracts.SecurityEventEnvelope
-                        // in several fields (UserSid, MachineName, WindowsSessionId, OsVersion, Details,
-                        // etc.), so recomputing the hash against this DTO's re-serialization would not
-                        // match the agent's original hash even for an untampered event - a rushed fix here
-                        // risks flagging every legitimate audit event as tampered. Also still undecided:
-                        // what should happen on a genuine mismatch (reject the event? flag and keep it?) -
-                        // that's a product decision, not just a wiring exercise. Storing the raw value
-                        // unverified for now; treat real verification as its own follow-up task.
                         integrityHash = envelope.IntegrityHash,
                         rawReasonCode = reasonCodeId == null ? envelope.ReasonCode : null,
                         rawPermissionGrantId = permissionGrantId == null ? envelope.PermissionGrantId : null
@@ -280,6 +296,7 @@ namespace DLPManagementSystem.Service.Service
                         ReceivedAtUtc = nowUtc,
                         AgentVersion = envelope.AgentVersion,
                         CorrelationId = envelope.CorrelationId,
+                        IntegrityVerified = integrityVerified,
                         MetadataJson = JsonSerializer.Serialize(metadata)
                     };
 
@@ -297,6 +314,23 @@ namespace DLPManagementSystem.Service.Service
                             AlertStatusId = newAlertStatusId!.Value,
                             Title = $"Blocked: {envelope.ActionKey}",
                             Description = string.IsNullOrWhiteSpace(envelope.ReasonCode) ? null : $"Reason: {envelope.ReasonCode}",
+                            CreatedAtUtc = nowUtc
+                        });
+                    }
+
+                    // Independent of the Block-decision alert above - an integrity mismatch can co-occur
+                    // with any decision (or none). Always Critical: this signals the event itself may not
+                    // be trustworthy, not just that a policy denied something.
+                    if (integrityVerified == false && canCreateCriticalAlerts)
+                    {
+                        _db.Alerts.Add(new Alert
+                        {
+                            OrganizationId = organizationId,
+                            AuditEventId = auditEvent.Id,
+                            AlertLevelId = criticalAlertLevelId!.Value,
+                            AlertStatusId = newAlertStatusId!.Value,
+                            Title = $"Integrity check failed: {envelope.ActionKey}",
+                            Description = "This audit event's integrityHash did not match the recomputed hash of its received data - the event was still recorded, but its authenticity could not be verified. This may indicate a compromised or malfunctioning agent.",
                             CreatedAtUtc = nowUtc
                         });
                     }
