@@ -51,7 +51,8 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> UpdateDevice(Guid id, [FromBody] UpdateDeviceDto request, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _deviceService.UpdateDeviceAsync(organizationId, id, request, cancellationToken);
+            var callerUserId = User.GetUserId();
+            var response = await _deviceService.UpdateDeviceAsync(organizationId, id, callerUserId, request, cancellationToken);
 
             if (!response.Success)
             {
@@ -66,7 +67,8 @@ namespace DLPManagementSystem.Controllers
         public async Task<IActionResult> DeleteDevice(Guid id, CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _deviceService.DeleteDeviceAsync(organizationId, id, cancellationToken);
+            var callerUserId = User.GetUserId();
+            var response = await _deviceService.DeleteDeviceAsync(organizationId, id, callerUserId, cancellationToken);
 
             if (!response.Success)
             {

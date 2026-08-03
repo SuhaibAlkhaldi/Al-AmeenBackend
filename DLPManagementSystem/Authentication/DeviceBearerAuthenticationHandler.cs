@@ -53,7 +53,7 @@ namespace DLPManagementSystem.Authentication
             var nowUtc = DateTimeOffset.UtcNow;
 
             var credential = await _db.DeviceCredentials
-                .Include(x => x.Device)
+                .Include(x => x.Device).ThenInclude(x => x.Status)
                 .FirstOrDefaultAsync(x =>
                     x.SecretHash == tokenHash &&
                     x.RevokedAtUtc == null &&
@@ -62,6 +62,11 @@ namespace DLPManagementSystem.Authentication
             if (credential == null)
             {
                 return AuthenticateResult.Fail("Invalid or expired device token.");
+            }
+
+            if (!string.Equals(credential.Device.Status.Name, "Active", StringComparison.OrdinalIgnoreCase))
+            {
+                return AuthenticateResult.Fail("Device is not active.");
             }
 
             credential.LastUsedAtUtc = nowUtc;
