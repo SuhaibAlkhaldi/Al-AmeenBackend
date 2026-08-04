@@ -36,6 +36,7 @@ namespace DLPManagementSystem.Data.Seed
             await SeedAuditLookupsAsync(cancellationToken);
             await SeedAgentCommandStatusesAsync(cancellationToken);
             await SeedAlertLookupsAsync(cancellationToken);
+            await SeedDemoRequestStatusesAsync(cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -546,6 +547,28 @@ namespace DLPManagementSystem.Data.Seed
                     Id = id,
                     Name = name,
                     Description = description
+                });
+            }
+        }
+
+        private async Task SeedDemoRequestStatusesAsync(CancellationToken ct)
+        {
+            await AddDemoRequestStatusIfMissing(1, "New", "New", ct);
+            await AddDemoRequestStatusIfMissing(2, "Contacted", "Contacted", ct);
+            await AddDemoRequestStatusIfMissing(3, "Closed", "Closed", ct);
+        }
+
+        private async Task AddDemoRequestStatusIfMissing(int id, string name, string displayName, CancellationToken ct)
+        {
+            var exists = await _db.DemoRequestStatuses.AnyAsync(x => x.Name == name, ct);
+
+            if (!exists)
+            {
+                _db.DemoRequestStatuses.Add(new DemoRequestStatus
+                {
+                    Id = id,
+                    Name = name,
+                    DisplayName = displayName
                 });
             }
         }

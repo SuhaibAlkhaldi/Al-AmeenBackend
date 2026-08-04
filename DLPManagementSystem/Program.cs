@@ -18,7 +18,10 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Identity;
 using DLPManagementSystem.CompanyDlpDashboard;
+using DLPManagementSystem.Common;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -97,6 +100,9 @@ builder.Services.AddScoped<IEnrollmentTokenService, EnrollmentTokenService>();
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
 builder.Services.AddScoped<IAlertEmailService, AlertEmailService>();
 builder.Services.AddHostedService<AlertEmailNotificationWorker>();
+
+builder.Services.AddScoped<IDemoRequestEmailService, DemoRequestEmailService>();
+builder.Services.AddScoped<IDemoRequestService, DemoRequestService>();
 
 builder.Services.Configure<AuditRetentionOptions>(builder.Configuration.GetSection("AuditRetention"));
 builder.Services.AddHostedService<AuditRetentionWorker>();
@@ -233,6 +239,24 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Basic anti-spam for the public (no-auth) demo-request submission endpoint: 5 submissions per
+// 10 minutes per client IP, with no queueing - a 6th request in the window is rejected immediately
+// with 429 rather than made to wait.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy(RateLimiterPolicies.DemoRequests, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0
+            }));
+});
+
 builder.Services
     .AddHealthChecks()
     .AddCheck(
@@ -301,6 +325,7 @@ app.UseCors("DlpDashboardCors");
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapControllers();
 
