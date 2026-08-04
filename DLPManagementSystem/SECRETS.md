@@ -63,7 +63,7 @@ if there's any chance the placeholder was ever actually live.
 ## STOP - if you're reading this because the server won't connect to the database
 This file was just restored to its safe committed default
 (`Server=127.0.0.1,1433;...Trusted_Connection=True...`) after a real production SQL credential
-(`Server=161.97.90.171,8797;...User Id=sa;Password=Admin@Password@161@!...`) was found committed directly in
+(`Server=161.97.90.171,8797;...User Id=sa;Password=<REDACTED>!...`) was found committed directly in
 `appsettings.json` — a live plaintext `sa` password for the real production database, exposed in git history.
 **That password must be rotated on the actual SQL Server** (this repo alone can't do that). Until then, anyone
 with read access to this repo or its git history can still use the old value.
