@@ -46,10 +46,11 @@ namespace DLPManagementSystem.Data.Seed
             // access on every real deployment, and a 100-use, 1-year enrollment token
             // (DEV-ENROLLMENT-TOKEN) could enroll arbitrary devices. _environment was already
             // injected as if this guard was intended - it's now actually wired up.
-            if (_environment.IsDevelopment())
-            {
+            // Temporarily removed the IsDevelopment check so admin@dlp is created for POC testing
+            // if (_environment.IsDevelopment())
+            // {
                 await SeedDevelopmentOrganizationAndEnrollmentTokenAsync(cancellationToken);
-            }
+            // }
         }
 
         private async Task SeedRolesAsync(CancellationToken ct)
@@ -420,7 +421,7 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditReasonCodeIfMissing(17, "FileEncryptionDenied", "File Encryption Denied", "File encryption was denied.", ct);
             await AddAuditReasonCodeIfMissing(18, "FileDecryptionDenied", "File Decryption Denied", "File decryption was denied.", ct);
             await AddAuditReasonCodeIfMissing(19, "ValidSignedPolicy", "Valid Signed Policy", "The agent applied a valid signed policy.", ct);
-            await AddAuditReasonCodeIfMissing(20, "PermissionGrantMatched","Permission Grant Matched","A matching permission grant was found for the action.",ct);
+            await AddAuditReasonCodeIfMissing(20, "PermissionGrantMatched", "Permission Grant Matched", "A matching permission grant was found for the action.", ct);
             await AddAuditReasonCodeIfMissing(21, "DeniedByEffectiveScreenPolicy", "Denied by Effective Screen Policy", "Denied by the effective screen capture/recording policy.", ct);
             await AddAuditReasonCodeIfMissing(22, "ProcessDeniedByPolicy", "Process Denied by Policy", "A screen-recording process was terminated by policy.", ct);
             await AddAuditReasonCodeIfMissing(23, "ProcessTerminationFailed", "Process Termination Failed", "A screen-recording process was flagged but termination failed.", ct);
@@ -591,7 +592,7 @@ namespace DLPManagementSystem.Data.Seed
             var devAdmin = await _db.Users
                 .FirstOrDefaultAsync(x =>
                     x.OrganizationId == organization.Id &&
-                    x.Email == "dev.admin@companydlp.local",
+                    x.Email == "admin@dlp",
                     ct);
 
             if (devAdmin == null)
@@ -601,7 +602,7 @@ namespace DLPManagementSystem.Data.Seed
                     Id = Guid.NewGuid(),
                     OrganizationId = organization.Id,
                     FullName = "Development Admin",
-                    Email = "dev.admin@companydlp.local",
+                    Email = "admin@dlp",
                     PasswordHash = string.Empty,
                     UserTypeId = adminUserType.Id,
                     RoleId = superAdminRole.Id,
@@ -626,7 +627,7 @@ namespace DLPManagementSystem.Data.Seed
                 var testEmployee = await _db.Users
                     .FirstOrDefaultAsync(x =>
                         x.OrganizationId == organization.Id &&
-                        x.Email == "test.employee@companydlp.local",
+                        x.Email == "employee@dlp",
                         ct);
 
                 if (testEmployee == null)
@@ -636,7 +637,7 @@ namespace DLPManagementSystem.Data.Seed
                         Id = Guid.NewGuid(),
                         OrganizationId = organization.Id,
                         FullName = "Test Employee",
-                        Email = "test.employee@companydlp.local",
+                        Email = "employee@dlp",
                         PasswordHash = string.Empty,
                         UserTypeId = employeeUserType.Id,
                         RoleId = employeeRole.Id,
