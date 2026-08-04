@@ -46,11 +46,10 @@ namespace DLPManagementSystem.Data.Seed
             // access on every real deployment, and a 100-use, 1-year enrollment token
             // (DEV-ENROLLMENT-TOKEN) could enroll arbitrary devices. _environment was already
             // injected as if this guard was intended - it's now actually wired up.
-            // Temporarily removed the IsDevelopment check so admin@dlp is created for POC testing
-            // if (_environment.IsDevelopment())
-            // {
+            if (_environment.IsDevelopment())
+            {
                 await SeedDevelopmentOrganizationAndEnrollmentTokenAsync(cancellationToken);
-            // }
+            }
         }
 
         private async Task SeedRolesAsync(CancellationToken ct)
