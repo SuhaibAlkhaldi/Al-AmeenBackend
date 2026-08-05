@@ -43,6 +43,7 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public AgentWatermarkPolicyDto Watermark { get; set; } = new();
         public AgentNotificationPolicyDto Notifications { get; set; } = new();
         public AgentSoftwarePolicyDto Software { get; set; } = new();
+        public AgentCliPolicyDto Cli { get; set; } = new();
         public AgentFileProtectionPolicyDto FileProtection { get; set; } = new();
         public AgentFileClassificationPolicyDto FileClassification { get; set; } = new();
         public AgentBackendPolicyDto Backend { get; set; } = new();
@@ -181,6 +182,20 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public bool RequireTrustedPublisher { get; set; }
         public List<string> AllowedPublishers { get; set; } = new();
         public List<string> AllowedSha256 { get; set; } = new();
+    }
+
+    // Mirrors CompanyDlp.Contracts.CliPolicy field-for-field. Agent-local-only, see above - this
+    // backend does not manage CLI enforcement mode/rule set, these are just
+    // CompanyDlp.Contracts.CliPolicy's own default values so the signed payload matches.
+    public class AgentCliPolicyDto
+    {
+        public bool Enabled { get; set; } = true;
+        public string EnforcementMode { get; set; } = "AuditOnly";
+        public List<string> RestrictedExecutableNames { get; set; } = new()
+        {
+            "cmd.exe", "powershell.exe", "powershell_ise.exe", "pwsh.exe"
+        };
+        public bool SensitiveCommandDetectionEnabled { get; set; } = true;
     }
 
     // Mirrors CompanyDlp.Contracts.FileProtectionPolicy field-for-field. Agent-local-only, see above.

@@ -28,6 +28,15 @@ namespace DLPManagementSystem.Service.Service
 
     public interface IPolicySigningService
     {
+        // Must be checked by callers BEFORE constructing the snapshot to sign: Sign()'s outcome
+        // (whether it produces a real ECDSA-SHA256 signature or falls back to the DEVELOPMENT-UNSIGNED
+        // sentinel) and the snapshot's own Policy.Runtime.Mode must never be set independently of each
+        // other again - that divergence (Runtime.Mode hardcoded to "Production" regardless of whether
+        // signing actually happened) is exactly what made every Development-mode agent's policy
+        // snapshot unverifiable. See PolicySnapshotValidator.TryValidate on the agent side, whose
+        // unsigned-dev bypass requires both facts to agree.
+        bool HasRealKey { get; }
+
         (string Algorithm, string SignatureBase64) Sign(AgentPolicySnapshotDto snapshot);
     }
 
@@ -38,6 +47,8 @@ namespace DLPManagementSystem.Service.Service
     public sealed class EcdsaPolicySigningService : IPolicySigningService
     {
         private readonly ECDsa? _ecdsa;
+
+        public bool HasRealKey => _ecdsa is not null;
 
         public EcdsaPolicySigningService(
             IOptions<PolicySigningOptions> options,

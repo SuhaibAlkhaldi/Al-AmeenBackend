@@ -189,6 +189,7 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionCategoryIfMissing(5, "File", "File", ct);
             await AddPermissionActionCategoryIfMissing(6, "Software", "Software", ct);
             await AddPermissionActionCategoryIfMissing(7, "System", "System", ct);
+            await AddPermissionActionCategoryIfMissing(8, "Cli", "Command Line", ct);
         }
 
         private async Task AddPermissionDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
@@ -278,6 +279,16 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionIfMissing(PermissionActionKeys.WatermarkDisable, "Screen", "Disable Watermark", "Allows the security watermark to be removed from the employee's assigned device.", "Deny", 170, ct);
 
             await AddPermissionActionIfMissing("agent.session", "System", "Agent Session", "Housekeeping events emitted by the agent's own session lifecycle.", "Allow", 160, ct);
+
+            // Allowed by default: most employees genuinely need a terminal for their job, so this
+            // starts open-but-audited rather than locking every device out of cmd/PowerShell the
+            // moment this ships. Individual employees/devices can still be denied via a normal grant.
+            await AddPermissionActionIfMissing("cli.execute", "Cli", "CLI Execution", "Block or allow launching cmd.exe/PowerShell/pwsh.exe.", "Allow", 180, ct);
+
+            // Not a real block gate - this is a detection/audit-only channel (see
+            // ActionKeys.CliSensitiveCommand on the agent side); kept Allow because there is
+            // genuinely no restriction tied to this key.
+            await AddPermissionActionIfMissing(PermissionActionKeys.CliSensitiveCommand, "Cli", "Sensitive CLI Command Detected", "Audit-only: flags command-line content matching exfiltration/attack patterns, independent of the CLI Execution decision.", "Allow", 190, ct);
         }
 
         private async Task ConfigureWatermarkActionsAsync(CancellationToken ct)

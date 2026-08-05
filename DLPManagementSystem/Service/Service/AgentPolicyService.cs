@@ -195,6 +195,15 @@ namespace DLPManagementSystem.Service.Service
             // backend-known fact worth actually sending in Backend; everything else there is just
             // "what this section defaults to," present only so the signed payload's shape matches
             // what the agent reconstructs.
+            //
+            // Runtime.Mode is the one exception - it MUST be derived from whether signing is actually
+            // going to produce a real signature (_policySigningService.HasRealKey), never hardcoded
+            // independently. PolicySnapshotValidator's unsigned-dev bypass on the agent side requires
+            // BOTH SignatureBase64=="DEVELOPMENT-UNSIGNED" AND Runtime.Mode=="Development" to be true
+            // together - if this ever hardcodes "Production" again while a real key isn't configured,
+            // every Development-mode agent's policy sync silently breaks again exactly as before.
+            var runtimeMode = _policySigningService.HasRealKey ? "Production" : "Development";
+
             var snapshot = new AgentPolicySnapshotDto
             {
                 PolicyId = policyId,
@@ -207,7 +216,7 @@ namespace DLPManagementSystem.Service.Service
                 {
                     PolicyVersion = $"central-{versionNumber}",
                     Enabled = true,
-                    Runtime = new AgentRuntimePolicyDto(),
+                    Runtime = new AgentRuntimePolicyDto { Mode = runtimeMode },
                     Backend = new AgentBackendPolicyDto
                     {
                         TenantId = organizationId
