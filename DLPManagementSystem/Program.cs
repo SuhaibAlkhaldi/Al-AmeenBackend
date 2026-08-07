@@ -3,6 +3,7 @@ using DLPManagementSystem.Data.Seed;
 using DLPManagementSystem.Helper.Email;
 using DLPManagementSystem.Helper.Health;
 using DLPManagementSystem.Helper.Retention;
+using DLPManagementSystem.Helper.DeviceMonitoring;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.BackgroundServices;
 using DLPManagementSystem.Service.Interface;
@@ -107,6 +108,9 @@ builder.Services.AddScoped<IDemoRequestService, DemoRequestService>();
 builder.Services.Configure<AuditRetentionOptions>(builder.Configuration.GetSection("AuditRetention"));
 builder.Services.AddHostedService<AuditRetentionWorker>();
 builder.Services.AddHostedService<PermissionGrantTransitionWorker>();
+
+builder.Services.Configure<DeviceStaleDetectionOptions>(builder.Configuration.GetSection("DeviceStaleDetection"));
+builder.Services.AddHostedService<DeviceStaleDetectionWorker>();
 
 // Explicit persistence + a stable application name: without these, ASP.NET Core's default Data
 // Protection keyring can differ across redeploys or across instances, silently breaking every

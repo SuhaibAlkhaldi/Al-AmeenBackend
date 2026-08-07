@@ -278,7 +278,7 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionIfMissing("software.execute-unapproved", "Software", "Execute Unapproved Software", "Block or allow unapproved software execution.", "Deny", 150, ct);
             await AddPermissionActionIfMissing(PermissionActionKeys.WatermarkDisable, "Screen", "Disable Watermark", "Allows the security watermark to be removed from the employee's assigned device.", "Deny", 170, ct);
 
-            await AddPermissionActionIfMissing("agent.session", "System", "Agent Session", "Housekeeping events emitted by the agent's own session lifecycle.", "Allow", 160, ct);
+            await AddPermissionActionIfMissing(PermissionActionKeys.AgentSession, "System", "Agent Session", "Housekeeping events emitted by the agent's own session lifecycle.", "Allow", 160, ct);
 
             // Deny by default like every other channel above: most rank-and-file employees at this
             // product's real customer base (government, banks, hospitals, telecom) don't need a
@@ -415,6 +415,11 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditEventTypeIfMissing(14, "ScreenProcessDetected", "Screen Process Detected", ct);
             await AddAuditEventTypeIfMissing(15, "ScreenProcessAllowed", "Screen Process Allowed", ct);
 
+            // Raised by DeviceStaleDetectionWorker itself (not reported by any agent) - see that class
+            // for the full detection logic.
+            await AddAuditEventTypeIfMissing(16, "DeviceStale", "Device Stale", ct);
+            await AddAuditEventTypeIfMissing(17, "DeviceStaleAfterPolicyChange", "Device Stale After Policy Change", ct);
+
             await AddAuditReasonCodeIfMissing(1, "DefaultAllow", "Default Allow", "Action was allowed by default policy.", ct);
             await AddAuditReasonCodeIfMissing(2, "GlobalDefaultDeny", "Global Default Deny", "Action was blocked by default deny policy.", ct);
             await AddAuditReasonCodeIfMissing(3, "PermanentPermissionActive", "Permanent Permission Active", "Action was allowed by active permanent grant.", ct);
@@ -439,6 +444,8 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditReasonCodeIfMissing(22, "ProcessDeniedByPolicy", "Process Denied by Policy", "A screen-recording process was terminated by policy.", ct);
             await AddAuditReasonCodeIfMissing(23, "ProcessTerminationFailed", "Process Termination Failed", "A screen-recording process was flagged but termination failed.", ct);
             await AddAuditReasonCodeIfMissing(24, "ProcessAuditOnly", "Process Audit Only", "A screen-recording process was detected and logged under audit-only enforcement.", ct);
+            await AddAuditReasonCodeIfMissing(25, "DeviceOffline", "Device Offline", "Device has not sent a heartbeat within the configured staleness window.", ct);
+            await AddAuditReasonCodeIfMissing(26, "DeviceOfflineWithUnconfirmedPolicy", "Device Offline With Unconfirmed Policy", "Device has not sent a heartbeat within the staleness window and has not confirmed applying the latest published policy version.", ct);
         }
 
         private async Task AddAuditDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
