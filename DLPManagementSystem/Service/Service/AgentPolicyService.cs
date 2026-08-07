@@ -21,6 +21,7 @@ namespace DLPManagementSystem.Service.Service
             Guid organizationId,
             Guid deviceId,
             long currentVersion,
+            string? userSid,
             CancellationToken cancellationToken = default)
         {
             var nowUtc = DateTimeOffset.UtcNow;
@@ -58,7 +59,7 @@ namespace DLPManagementSystem.Service.Service
             }
 
             var defaultPermissions = await BuildDefaultPermissionsAsync(cancellationToken);
-            var grants = await BuildGrantsForDeviceAsync(organizationId, device.Id, nowUtc, cancellationToken);
+            var grants = await BuildGrantsForDeviceAsync(organizationId, device.Id, userSid, nowUtc, cancellationToken);
             var watermarkEnabled = BuildEffectiveWatermarkEnabled(grants);
 
             var snapshot = BuildPolicySnapshot(
@@ -92,28 +93,49 @@ namespace DLPManagementSystem.Service.Service
                 "يوجد تحديث جديد للسياسة");
         }
 
-        // The device's currently-assigned employee's active grants, re-keyed to a DeviceId-scoped
+        // The device's currently-active employee's active grants, re-keyed to a DeviceId-scoped
         // grant (the agent already knows how to match DeviceId — it has no concept of "Employee").
         // Includes grants targeted at this specific device as well as employee-wide ones (TargetDeviceId
         // null). Only RuntimeStatus == Active grants are sent; Pending/Expired/Revoked stay server-side.
+        //
+        // Shared-device support: a device can have more than one active DeviceUserAssignment (a shared
+        // workstation authorized for several employees). "Currently-active employee" is resolved as:
+        //   - Zero active assignments: no employee (unchanged from before shared-device support).
+        //   - Exactly one active assignment: that employee, unconditionally — deliberately NOT gated on
+        //     userSid matching anything, so every existing single-assignment device keeps working
+        //     exactly as it does today even though EmployeeWindowsIdentities is not populated for it
+        //     (this is the compatibility guarantee this feature was built under).
+        //   - More than one active assignment: resolved via userSid (the Agent's current interactive
+        //     console user, sent as an unsigned query parameter — see AgentPolicyController) matched
+        //     against EmployeeWindowsIdentities, restricted to only the employees officially assigned to
+        //     THIS device. No match (unrecognized SID, or no SID sent) falls through to no employee —
+        //     same "unknown subject -> GlobalDefaultDeny/Allow" behavior as always, never "pick anyone."
         private async Task<List<AgentPermissionGrantDto>> BuildGrantsForDeviceAsync(
             Guid organizationId,
             Guid deviceId,
+            string? userSid,
             DateTimeOffset nowUtc,
             CancellationToken cancellationToken)
         {
-            var assignedEmployeeId = await _db.DeviceUserAssignments
+            var activeAssignedEmployeeIds = await _db.DeviceUserAssignments
                 .AsNoTracking()
                 .Where(x => x.DeviceId == deviceId && x.UnassignedAtUtc == null)
-                .Select(x => (Guid?)x.EmployeeId)
-                .FirstOrDefaultAsync(cancellationToken);
+                .Select(x => x.EmployeeId)
+                .ToListAsync(cancellationToken);
 
-            if (assignedEmployeeId == null)
+            Guid? resolvedEmployeeId = activeAssignedEmployeeIds.Count switch
+            {
+                0 => null,
+                1 => activeAssignedEmployeeIds[0],
+                _ => await ResolveEmployeeBySidAsync(organizationId, activeAssignedEmployeeIds, userSid, cancellationToken)
+            };
+
+            if (resolvedEmployeeId == null)
             {
                 return new List<AgentPermissionGrantDto>();
             }
 
-            var employeeIdString = assignedEmployeeId.Value.ToString();
+            var employeeIdString = resolvedEmployeeId.Value.ToString();
 
             var candidates = await _db.PermissionGrants
                 .AsNoTracking()
@@ -161,6 +183,33 @@ namespace DLPManagementSystem.Service.Service
                     ClassificationTier = g.ClassificationTier
                 })
                 .ToList();
+        }
+
+        // Only called when a device has more than one active assignment (see BuildGrantsForDeviceAsync).
+        // Deliberately restricts the EmployeeWindowsIdentities lookup to candidateEmployeeIds (the
+        // employees actually assigned to THIS device) rather than searching org-wide by SID - the
+        // official per-device assignment stays the authorization boundary; a SID that happens to be
+        // registered for some other employee elsewhere in the organization must never grant that
+        // employee's policy on a device they were never assigned to.
+        private async Task<Guid?> ResolveEmployeeBySidAsync(
+            Guid organizationId,
+            List<Guid> candidateEmployeeIds,
+            string? userSid,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(userSid))
+            {
+                return null;
+            }
+
+            return await _db.EmployeeWindowsIdentities
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId
+                    && candidateEmployeeIds.Contains(x.EmployeeId)
+                    && x.UserSid == userSid
+                    && x.RevokedAtUtc == null)
+                .Select(x => (Guid?)x.EmployeeId)
+                .FirstOrDefaultAsync(cancellationToken);
         }
 
         // The real, admin-manageable per-action default (Allow/Deny) from PermissionActions —

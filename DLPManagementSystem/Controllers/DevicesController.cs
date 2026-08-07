@@ -108,5 +108,52 @@ namespace DLPManagementSystem.Controllers
 
             return Ok(response);
         }
+
+        // Shared-device assignments - additive/removable one at a time, distinct from the single-owner
+        // /assign (replaces) and /unassign (clears all) endpoints above, which are unchanged.
+        [HttpGet("{id:guid}/assignments")]
+        public async Task<IActionResult> GetDeviceAssignments(Guid id, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var response = await _deviceService.GetDeviceAssignmentsAsync(organizationId, id, cancellationToken);
+
+            if (!response.Success)
+            {
+                return NotFound(response);
+            }
+
+            return Ok(response);
+        }
+
+        [HttpPost("{id:guid}/assignments")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk")]
+        public async Task<IActionResult> AddDeviceAssignment(Guid id, [FromBody] AssignDeviceDto request, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var assignedByUserId = User.GetUserId();
+            var response = await _deviceService.AddDeviceAssignmentAsync(organizationId, id, assignedByUserId, request, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
+
+        [HttpPost("{id:guid}/assignments/{employeeId:guid}/unassign")]
+        [Authorize(Roles = "SuperAdmin,SecurityAdmin,HelpDesk")]
+        public async Task<IActionResult> RemoveDeviceAssignment(Guid id, Guid employeeId, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var response = await _deviceService.RemoveDeviceAssignmentAsync(organizationId, id, employeeId, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
     }
 }

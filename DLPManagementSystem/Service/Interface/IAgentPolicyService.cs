@@ -9,6 +9,7 @@ namespace DLPManagementSystem.Service.Interface
             Guid organizationId,
             Guid deviceId,
             long currentVersion,
+            string? userSid,
             CancellationToken cancellationToken = default);
     }
 }

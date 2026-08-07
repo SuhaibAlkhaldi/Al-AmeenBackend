@@ -94,5 +94,51 @@ namespace DLPManagementSystem.Controllers
 
             return Ok(response);
         }
+
+        [HttpGet("{id:guid}/windows-identities")]
+        public async Task<IActionResult> GetWindowsIdentities(Guid id, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var response = await _employeeService.GetWindowsIdentitiesAsync(organizationId, id, cancellationToken);
+
+            if (!response.Success)
+            {
+                return NotFound(response);
+            }
+
+            return Ok(response);
+        }
+
+        [HttpPost("{id:guid}/windows-identities")]
+        [Authorize(Roles = "SuperAdmin,HelpDesk")]
+        public async Task<IActionResult> AddWindowsIdentity(Guid id, [FromBody] CreateEmployeeWindowsIdentityDto request, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var callerUserId = User.GetUserId();
+            var response = await _employeeService.AddWindowsIdentityAsync(organizationId, id, callerUserId, request, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
+
+        [HttpPost("{id:guid}/windows-identities/{identityId:guid}/revoke")]
+        [Authorize(Roles = "SuperAdmin,HelpDesk")]
+        public async Task<IActionResult> RevokeWindowsIdentity(Guid id, Guid identityId, CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var callerUserId = User.GetUserId();
+            var response = await _employeeService.RevokeWindowsIdentityAsync(organizationId, id, identityId, callerUserId, cancellationToken);
+
+            if (!response.Success)
+            {
+                return BadRequest(response);
+            }
+
+            return Ok(response);
+        }
     }
 }

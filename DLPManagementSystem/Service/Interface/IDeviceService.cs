@@ -22,5 +22,11 @@ namespace DLPManagementSystem.Service.Interface
         Task<ApiResponse<bool>> AssignDeviceAsync(Guid organizationId, Guid id, Guid assignedByUserId, AssignDeviceDto request, CancellationToken cancellationToken = default);
 
         Task<ApiResponse<bool>> UnassignDeviceAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default);
+
+        Task<ApiResponse<List<DeviceAssignmentDto>>> GetDeviceAssignmentsAsync(Guid organizationId, Guid id, CancellationToken cancellationToken = default);
+
+        Task<ApiResponse<bool>> AddDeviceAssignmentAsync(Guid organizationId, Guid id, Guid assignedByUserId, AssignDeviceDto request, CancellationToken cancellationToken = default);
+
+        Task<ApiResponse<bool>> RemoveDeviceAssignmentAsync(Guid organizationId, Guid id, Guid employeeId, CancellationToken cancellationToken = default);
     }
 }

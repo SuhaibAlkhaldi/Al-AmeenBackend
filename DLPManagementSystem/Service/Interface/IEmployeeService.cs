@@ -21,5 +21,14 @@ namespace DLPManagementSystem.Service.Interface
         Task<ApiResponse<EmployeeDetailDto>> UpdateEmployeeAsync(Guid organizationId, Guid id, Guid callerUserId, UpdateEmployeeDto request, CancellationToken cancellationToken = default);
 
         Task<ApiResponse<bool>> DeleteEmployeeAsync(Guid organizationId, Guid id, Guid callerUserId, CancellationToken cancellationToken = default);
+
+        Task<ApiResponse<List<EmployeeWindowsIdentityDto>>> GetWindowsIdentitiesAsync(
+            Guid organizationId, Guid employeeId, CancellationToken cancellationToken = default);
+
+        Task<ApiResponse<EmployeeWindowsIdentityDto>> AddWindowsIdentityAsync(
+            Guid organizationId, Guid employeeId, Guid callerUserId, CreateEmployeeWindowsIdentityDto request, CancellationToken cancellationToken = default);
+
+        Task<ApiResponse<bool>> RevokeWindowsIdentityAsync(
+            Guid organizationId, Guid employeeId, Guid identityId, Guid callerUserId, CancellationToken cancellationToken = default);
     }
 }
