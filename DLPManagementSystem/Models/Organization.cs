@@ -52,6 +52,9 @@ public partial class Organization
     public virtual ICollection<Department> Departments { get; set; } = new List<Department>();
 
     [InverseProperty("Organization")]
+    public virtual ICollection<DictionaryRule> DictionaryRules { get; set; } = new List<DictionaryRule>();
+
+    [InverseProperty("Organization")]
     public virtual ICollection<DeviceGroup> DeviceGroups { get; set; } = new List<DeviceGroup>();
 
     [InverseProperty("Organization")]

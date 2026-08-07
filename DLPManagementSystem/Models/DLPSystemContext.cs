@@ -49,6 +49,8 @@ public partial class DLPSystemContext : DbContext
 
     public virtual DbSet<Department> Departments { get; set; }
 
+    public virtual DbSet<DictionaryRule> DictionaryRules { get; set; }
+
     public virtual DbSet<Device> Devices { get; set; }
 
     public virtual DbSet<DeviceCredential> DeviceCredentials { get; set; }
@@ -374,6 +376,21 @@ public partial class DLPSystemContext : DbContext
                 .HasConstraintName("FK_Departments_Organizations");
 
             entity.HasOne(d => d.ParentDepartment).WithMany(p => p.InverseParentDepartment).HasConstraintName("FK_Departments_ParentDepartment");
+        });
+
+        modelBuilder.Entity<DictionaryRule>(entity =>
+        {
+            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.CreatedAtUtc).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+
+            entity.HasOne(d => d.Organization).WithMany(p => p.DictionaryRules)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_DictionaryRules_Organizations");
+
+            entity.HasOne(d => d.CreatedByUser).WithMany()
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_DictionaryRules_CreatedByUser");
         });
 
         modelBuilder.Entity<Device>(entity =>

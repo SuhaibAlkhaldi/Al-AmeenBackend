@@ -77,6 +77,7 @@ builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 builder.Services.AddScoped<IAlertService, AlertService>();
 builder.Services.AddScoped<IAuditEventService, AuditEventService>();
 builder.Services.AddScoped<IPermissionRequestService, PermissionRequestService>();
+builder.Services.AddScoped<IDictionaryRuleService, DictionaryRuleService>();
 builder.Services.AddScoped<IPermissionGrantService, PermissionGrantService>();
 builder.Services.Configure<FileClassificationApiOptions>(builder.Configuration.GetSection("FileClassificationApi"));
 builder.Services.AddHttpClient("FileClassificationApi", (services, client) =>

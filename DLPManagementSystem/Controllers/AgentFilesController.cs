@@ -13,13 +13,28 @@ namespace DLPManagementSystem.Controllers
     {
         private readonly IFileClassificationService _fileClassificationService;
         private readonly IFileKeyProtectionService _fileKeyProtectionService;
+        private readonly IDictionaryRuleService _dictionaryRuleService;
 
         public AgentFilesController(
             IFileClassificationService fileClassificationService,
-            IFileKeyProtectionService fileKeyProtectionService)
+            IFileKeyProtectionService fileKeyProtectionService,
+            IDictionaryRuleService dictionaryRuleService)
         {
             _fileClassificationService = fileClassificationService;
             _fileKeyProtectionService = fileKeyProtectionService;
+            _dictionaryRuleService = dictionaryRuleService;
+        }
+
+        // A separate pull from the policy blob - dictionary rules change independently of the rest
+        // of policy, so the agent's DictionaryRuleSyncWorker polls this on its own cadence. Returns
+        // the raw DTO (unwrapped, not ApiResponse<T>) since the agent's BackendApiClient always
+        // succeeds in reading a rule set (falls back to defaults) - there's no failure case to wrap.
+        [HttpGet("api/v1/agent/dictionary-rules")]
+        public async Task<IActionResult> GetDictionaryRules(CancellationToken cancellationToken)
+        {
+            var organizationId = User.GetOrganizationId();
+            var response = await _dictionaryRuleService.GetActiveAsync(organizationId, cancellationToken);
+            return Ok(response);
         }
 
         // Multipart, not JSON: the file's actual bytes travel here for background-scan classification
