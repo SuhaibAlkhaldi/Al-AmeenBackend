@@ -280,10 +280,12 @@ namespace DLPManagementSystem.Data.Seed
 
             await AddPermissionActionIfMissing("agent.session", "System", "Agent Session", "Housekeeping events emitted by the agent's own session lifecycle.", "Allow", 160, ct);
 
-            // Allowed by default: most employees genuinely need a terminal for their job, so this
-            // starts open-but-audited rather than locking every device out of cmd/PowerShell the
-            // moment this ships. Individual employees/devices can still be denied via a normal grant.
-            await AddPermissionActionIfMissing("cli.execute", "Cli", "CLI Execution", "Block or allow launching cmd.exe/PowerShell/pwsh.exe.", "Allow", 180, ct);
+            // Deny by default like every other channel above: most rank-and-file employees at this
+            // product's real customer base (government, banks, hospitals, telecom) don't need a
+            // terminal at all, only IT staff do. Admins grant CLI access to the employees/teams who
+            // need it via the same "Grant Access Directly" flow already used for every other
+            // deny-by-default channel.
+            await AddPermissionActionIfMissing("cli.execute", "Cli", "CLI Execution", "Block or allow launching cmd.exe/PowerShell/pwsh.exe.", "Deny", 180, ct);
 
             // Not a real block gate - this is a detection/audit-only channel (see
             // ActionKeys.CliSensitiveCommand on the agent side); kept Allow because there is
