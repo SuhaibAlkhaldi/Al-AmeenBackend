@@ -269,6 +269,9 @@ builder.Services
         tags: new[] { "live" })
     .AddCheck<DatabaseHealthCheck>(
         name: "database",
+        tags: new[] { "ready" })
+    .AddCheck<PolicySigningHealthCheck>(
+        name: "policy-signing",
         tags: new[] { "ready" });
 
 var app = builder.Build();
