@@ -32,6 +32,10 @@ namespace DLPManagementSystem.DTO.AuditEvents
 
         public long? PolicyVersion { get; set; }
 
+        // null = not evaluated (predates this feature, or the agent sent no hash); true = verified;
+        // false = mismatch or malformed hash - flagged for review, does not mean the event was dropped.
+        public bool? IntegrityVerified { get; set; }
+
         public string? Details { get; set; }
     }
 }

@@ -45,5 +45,8 @@
         public string? RevocationReason { get; set; }
 
         public string? RevokedByUserName { get; set; }
+
+        // Only ever set for ActionKey == "file.decrypt" - null means an ordinary, ungated grant.
+        public string? ClassificationTier { get; set; }
     }
 }

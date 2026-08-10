@@ -51,6 +51,10 @@ public partial class DLPSystemContext : DbContext
 
     public virtual DbSet<DictionaryRule> DictionaryRules { get; set; }
 
+    public virtual DbSet<DemoRequest> DemoRequests { get; set; }
+
+    public virtual DbSet<DemoRequestStatus> DemoRequestStatuses { get; set; }
+
     public virtual DbSet<Device> Devices { get; set; }
 
     public virtual DbSet<DeviceCredential> DeviceCredentials { get; set; }
@@ -376,6 +380,21 @@ public partial class DLPSystemContext : DbContext
                 .HasConstraintName("FK_Departments_Organizations");
 
             entity.HasOne(d => d.ParentDepartment).WithMany(p => p.InverseParentDepartment).HasConstraintName("FK_Departments_ParentDepartment");
+        });
+
+        modelBuilder.Entity<DemoRequest>(entity =>
+        {
+            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.CreatedAtUtc).HasDefaultValueSql("(sysutcdatetime())");
+
+            entity.HasOne(d => d.Status).WithMany(p => p.DemoRequests)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_DemoRequests_DemoRequestStatuses");
+        });
+
+        modelBuilder.Entity<DemoRequestStatus>(entity =>
+        {
+            entity.Property(e => e.Id).ValueGeneratedNever();
         });
 
         modelBuilder.Entity<DictionaryRule>(entity =>

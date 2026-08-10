@@ -109,6 +109,7 @@ namespace DLPManagementSystem.Service.Service
                     ReasonCodeId = x.ReasonCodeId,
                     ReasonCodeDisplayName = x.ReasonCode != null ? x.ReasonCode.DisplayName : null,
                     PolicyVersion = x.PolicyVersion,
+                    IntegrityVerified = x.IntegrityVerified,
                     Details = x.MetadataJson
                 })
                 .ToListAsync(cancellationToken);
@@ -180,6 +181,7 @@ namespace DLPManagementSystem.Service.Service
                     ReasonCodeId = x.ReasonCodeId,
                     ReasonCodeDisplayName = x.ReasonCode != null ? x.ReasonCode.DisplayName : null,
                     PolicyVersion = x.PolicyVersion,
+                    IntegrityVerified = x.IntegrityVerified,
                     Details = x.MetadataJson
                 })
                 .AsAsyncEnumerable();

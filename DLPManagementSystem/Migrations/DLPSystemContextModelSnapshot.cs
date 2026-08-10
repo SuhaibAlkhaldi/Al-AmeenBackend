@@ -578,6 +578,9 @@ namespace DLPManagementSystem.Migrations
                     b.Property<int>("EventTypeId")
                         .HasColumnType("int");
 
+                    b.Property<bool?>("IntegrityVerified")
+                        .HasColumnType("bit");
+
                     b.Property<string>("MetadataJson")
                         .HasColumnType("nvarchar(max)");
 
@@ -732,6 +735,79 @@ namespace DLPManagementSystem.Migrations
                         .IsUnique();
 
                     b.ToTable("AuditReasonCodes");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.DemoRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newsequentialid())");
+
+                    b.Property<string>("CompanyEmail")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("CompanyName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CompanySize")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("(sysutcdatetime())");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("SourceIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("StatusId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StatusId");
+
+                    b.ToTable("DemoRequests");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.DemoRequestStatus", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "Name" }, "UQ_DemoRequestStatuses_Name")
+                        .IsUnique();
+
+                    b.ToTable("DemoRequestStatuses");
                 });
 
             modelBuilder.Entity("DLPManagementSystem.Models.Department", b =>
@@ -2834,6 +2910,17 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.DemoRequest", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.DemoRequestStatus", "Status")
+                        .WithMany("DemoRequests")
+                        .HasForeignKey("StatusId")
+                        .IsRequired()
+                        .HasConstraintName("FK_DemoRequests_DemoRequestStatuses");
+
+                    b.Navigation("Status");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.Department", b =>
                 {
                     b.HasOne("DLPManagementSystem.Models.Organization", "Organization")
@@ -3600,6 +3687,11 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("AuditEvents");
 
                     b.Navigation("SoftwareExecutionEvents");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.DemoRequestStatus", b =>
+                {
+                    b.Navigation("DemoRequests");
                 });
 
             modelBuilder.Entity("DLPManagementSystem.Models.Department", b =>

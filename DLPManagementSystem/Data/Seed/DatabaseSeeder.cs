@@ -36,8 +36,17 @@ namespace DLPManagementSystem.Data.Seed
             await SeedAuditLookupsAsync(cancellationToken);
             await SeedAgentCommandStatusesAsync(cancellationToken);
             await SeedAlertLookupsAsync(cancellationToken);
+            await SeedDemoRequestStatusesAsync(cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
+
+            // Dev-only convenience data - a login-ready admin/employee account and a reusable
+            // enrollment token - must never be created outside Development. This used to run
+            // unconditionally, including in Production, which meant a publicly-known
+            // email/password pair (dev.admin@companydlp.local / DevAdmin123!) had SuperAdmin
+            // access on every real deployment, and a 100-use, 1-year enrollment token
+            // (DEV-ENROLLMENT-TOKEN) could enroll arbitrary devices. _environment was already
+            // injected as if this guard was intended - it's now actually wired up.
             if (_environment.IsDevelopment())
             {
                 await SeedDevelopmentOrganizationAndEnrollmentTokenAsync(cancellationToken);
@@ -180,6 +189,7 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionCategoryIfMissing(5, "File", "File", ct);
             await AddPermissionActionCategoryIfMissing(6, "Software", "Software", ct);
             await AddPermissionActionCategoryIfMissing(7, "System", "System", ct);
+            await AddPermissionActionCategoryIfMissing(8, "Cli", "Command Line", ct);
         }
 
         private async Task AddPermissionDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
@@ -268,7 +278,19 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionIfMissing("software.execute-unapproved", "Software", "Execute Unapproved Software", "Block or allow unapproved software execution.", "Deny", 150, ct);
             await AddPermissionActionIfMissing(PermissionActionKeys.WatermarkDisable, "Screen", "Disable Watermark", "Allows the security watermark to be removed from the employee's assigned device.", "Deny", 170, ct);
 
-            await AddPermissionActionIfMissing("agent.session", "System", "Agent Session", "Housekeeping events emitted by the agent's own session lifecycle.", "Allow", 160, ct);
+            await AddPermissionActionIfMissing(PermissionActionKeys.AgentSession, "System", "Agent Session", "Housekeeping events emitted by the agent's own session lifecycle.", "Allow", 160, ct);
+
+            // Deny by default like every other channel above: most rank-and-file employees at this
+            // product's real customer base (government, banks, hospitals, telecom) don't need a
+            // terminal at all, only IT staff do. Admins grant CLI access to the employees/teams who
+            // need it via the same "Grant Access Directly" flow already used for every other
+            // deny-by-default channel.
+            await AddPermissionActionIfMissing("cli.execute", "Cli", "CLI Execution", "Block or allow launching cmd.exe/PowerShell/pwsh.exe.", "Deny", 180, ct);
+
+            // Not a real block gate - this is a detection/audit-only channel (see
+            // ActionKeys.CliSensitiveCommand on the agent side); kept Allow because there is
+            // genuinely no restriction tied to this key.
+            await AddPermissionActionIfMissing(PermissionActionKeys.CliSensitiveCommand, "Cli", "Sensitive CLI Command Detected", "Audit-only: flags command-line content matching exfiltration/attack patterns, independent of the CLI Execution decision.", "Allow", 190, ct);
         }
 
         private async Task ConfigureWatermarkActionsAsync(CancellationToken ct)
@@ -393,6 +415,11 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditEventTypeIfMissing(14, "ScreenProcessDetected", "Screen Process Detected", ct);
             await AddAuditEventTypeIfMissing(15, "ScreenProcessAllowed", "Screen Process Allowed", ct);
 
+            // Raised by DeviceStaleDetectionWorker itself (not reported by any agent) - see that class
+            // for the full detection logic.
+            await AddAuditEventTypeIfMissing(16, "DeviceStale", "Device Stale", ct);
+            await AddAuditEventTypeIfMissing(17, "DeviceStaleAfterPolicyChange", "Device Stale After Policy Change", ct);
+
             await AddAuditReasonCodeIfMissing(1, "DefaultAllow", "Default Allow", "Action was allowed by default policy.", ct);
             await AddAuditReasonCodeIfMissing(2, "GlobalDefaultDeny", "Global Default Deny", "Action was blocked by default deny policy.", ct);
             await AddAuditReasonCodeIfMissing(3, "PermanentPermissionActive", "Permanent Permission Active", "Action was allowed by active permanent grant.", ct);
@@ -412,11 +439,13 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditReasonCodeIfMissing(17, "FileEncryptionDenied", "File Encryption Denied", "File encryption was denied.", ct);
             await AddAuditReasonCodeIfMissing(18, "FileDecryptionDenied", "File Decryption Denied", "File decryption was denied.", ct);
             await AddAuditReasonCodeIfMissing(19, "ValidSignedPolicy", "Valid Signed Policy", "The agent applied a valid signed policy.", ct);
-            await AddAuditReasonCodeIfMissing(20, "PermissionGrantMatched","Permission Grant Matched","A matching permission grant was found for the action.",ct);
+            await AddAuditReasonCodeIfMissing(20, "PermissionGrantMatched", "Permission Grant Matched", "A matching permission grant was found for the action.", ct);
             await AddAuditReasonCodeIfMissing(21, "DeniedByEffectiveScreenPolicy", "Denied by Effective Screen Policy", "Denied by the effective screen capture/recording policy.", ct);
             await AddAuditReasonCodeIfMissing(22, "ProcessDeniedByPolicy", "Process Denied by Policy", "A screen-recording process was terminated by policy.", ct);
             await AddAuditReasonCodeIfMissing(23, "ProcessTerminationFailed", "Process Termination Failed", "A screen-recording process was flagged but termination failed.", ct);
             await AddAuditReasonCodeIfMissing(24, "ProcessAuditOnly", "Process Audit Only", "A screen-recording process was detected and logged under audit-only enforcement.", ct);
+            await AddAuditReasonCodeIfMissing(25, "DeviceOffline", "Device Offline", "Device has not sent a heartbeat within the configured staleness window.", ct);
+            await AddAuditReasonCodeIfMissing(26, "DeviceOfflineWithUnconfirmedPolicy", "Device Offline With Unconfirmed Policy", "Device has not sent a heartbeat within the staleness window and has not confirmed applying the latest published policy version.", ct);
         }
 
         private async Task AddAuditDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
@@ -542,6 +571,28 @@ namespace DLPManagementSystem.Data.Seed
             }
         }
 
+        private async Task SeedDemoRequestStatusesAsync(CancellationToken ct)
+        {
+            await AddDemoRequestStatusIfMissing(1, "New", "New", ct);
+            await AddDemoRequestStatusIfMissing(2, "Contacted", "Contacted", ct);
+            await AddDemoRequestStatusIfMissing(3, "Closed", "Closed", ct);
+        }
+
+        private async Task AddDemoRequestStatusIfMissing(int id, string name, string displayName, CancellationToken ct)
+        {
+            var exists = await _db.DemoRequestStatuses.AnyAsync(x => x.Name == name, ct);
+
+            if (!exists)
+            {
+                _db.DemoRequestStatuses.Add(new DemoRequestStatus
+                {
+                    Id = id,
+                    Name = name,
+                    DisplayName = displayName
+                });
+            }
+        }
+
         private async Task SeedDevelopmentOrganizationAndEnrollmentTokenAsync(CancellationToken ct)
         {
             var nowUtc = DateTime.UtcNow;
@@ -583,7 +634,7 @@ namespace DLPManagementSystem.Data.Seed
             var devAdmin = await _db.Users
                 .FirstOrDefaultAsync(x =>
                     x.OrganizationId == organization.Id &&
-                    x.Email == "dev.admin@companydlp.local",
+                    x.Email == "admin@dlp",
                     ct);
 
             if (devAdmin == null)
@@ -593,7 +644,7 @@ namespace DLPManagementSystem.Data.Seed
                     Id = Guid.NewGuid(),
                     OrganizationId = organization.Id,
                     FullName = "Development Admin",
-                    Email = "dev.admin@companydlp.local",
+                    Email = "admin@dlp",
                     PasswordHash = string.Empty,
                     UserTypeId = adminUserType.Id,
                     RoleId = superAdminRole.Id,
@@ -608,6 +659,42 @@ namespace DLPManagementSystem.Data.Seed
 
                 _db.Users.Add(devAdmin);
                 await _db.SaveChangesAsync(ct);
+            }
+
+            var employeeRole = await _db.Roles.FirstOrDefaultAsync(x => x.Name == "Employee", ct);
+            var employeeUserType = await _db.UserTypes.FirstOrDefaultAsync(x => x.Name == "Employee", ct);
+
+            if (employeeRole != null && employeeUserType != null && activeUserStatus != null)
+            {
+                var testEmployee = await _db.Users
+                    .FirstOrDefaultAsync(x =>
+                        x.OrganizationId == organization.Id &&
+                        x.Email == "employee@dlp",
+                        ct);
+
+                if (testEmployee == null)
+                {
+                    testEmployee = new User
+                    {
+                        Id = Guid.NewGuid(),
+                        OrganizationId = organization.Id,
+                        FullName = "Test Employee",
+                        Email = "employee@dlp",
+                        PasswordHash = string.Empty,
+                        UserTypeId = employeeUserType.Id,
+                        RoleId = employeeRole.Id,
+                        StatusId = activeUserStatus.Id,
+
+                        IsEmailVerified = true,
+                        LastLoginAtUtc = null,
+                        CreatedAtUtc = nowUtc,
+                        UpdatedAtUtc = nowUtc
+                    };
+                    testEmployee.PasswordHash = _passwordService.HashPassword(testEmployee, "Employee123!");
+
+                    _db.Users.Add(testEmployee);
+                    await _db.SaveChangesAsync(ct);
+                }
             }
 
             const string plainToken = "DEV-ENROLLMENT-TOKEN";

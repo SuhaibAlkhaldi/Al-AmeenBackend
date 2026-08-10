@@ -260,5 +260,125 @@ namespace DLPManagementSystem.Service.Service
 
             return ApiResponse<bool>.SuccessResponse(true, "Employee terminated successfully.", "تم إنهاء خدمة الموظف بنجاح");
         }
+
+        public async Task<ApiResponse<List<EmployeeWindowsIdentityDto>>> GetWindowsIdentitiesAsync(
+            Guid organizationId, Guid employeeId, CancellationToken cancellationToken = default)
+        {
+            var employeeExists = await _db.Employees
+                .AnyAsync(x => x.OrganizationId == organizationId && x.Id == employeeId, cancellationToken);
+
+            if (!employeeExists)
+            {
+                return ApiResponse<List<EmployeeWindowsIdentityDto>>.FailureResponse("Employee was not found.", "الموظف غير موجود");
+            }
+
+            var identities = await _db.EmployeeWindowsIdentities
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.EmployeeId == employeeId)
+                .OrderByDescending(x => x.IsPrimary)
+                .ThenByDescending(x => x.CreatedAtUtc)
+                .Select(x => new EmployeeWindowsIdentityDto
+                {
+                    Id = x.Id,
+                    EmployeeId = x.EmployeeId,
+                    DomainName = x.DomainName,
+                    Username = x.Username,
+                    UserSid = x.UserSid,
+                    IsPrimary = x.IsPrimary,
+                    CreatedAtUtc = x.CreatedAtUtc,
+                    RevokedAtUtc = x.RevokedAtUtc
+                })
+                .ToListAsync(cancellationToken);
+
+            return ApiResponse<List<EmployeeWindowsIdentityDto>>.SuccessResponse(identities);
+        }
+
+        // Manual admin entry only - see CreateEmployeeWindowsIdentityDto. The unique index
+        // UX_EmployeeWindowsIdentities_Org_UserSid_Active (OrganizationId+UserSid, active rows only)
+        // means a SID can only ever be actively registered to one employee per organization at a time;
+        // checked here explicitly so a duplicate registration gets a friendly bilingual error instead
+        // of a raw DbUpdateException from the unique-index violation.
+        public async Task<ApiResponse<EmployeeWindowsIdentityDto>> AddWindowsIdentityAsync(
+            Guid organizationId, Guid employeeId, Guid callerUserId, CreateEmployeeWindowsIdentityDto request, CancellationToken cancellationToken = default)
+        {
+            var employee = await _db.Employees
+                .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == employeeId, cancellationToken);
+
+            if (employee == null)
+            {
+                return ApiResponse<EmployeeWindowsIdentityDto>.FailureResponse("Employee was not found.", "الموظف غير موجود");
+            }
+
+            var sidAlreadyActive = await _db.EmployeeWindowsIdentities
+                .AnyAsync(x => x.OrganizationId == organizationId && x.UserSid == request.UserSid && x.RevokedAtUtc == null, cancellationToken);
+
+            if (sidAlreadyActive)
+            {
+                return ApiResponse<EmployeeWindowsIdentityDto>.FailureResponse(
+                    "This Windows SID is already actively registered to an employee in this organization.",
+                    "هذا الـ SID مسجَّل بالفعل لموظف آخر بهذه المؤسسة");
+            }
+
+            var nowUtc = DateTimeOffset.UtcNow;
+
+            var identity = new EmployeeWindowsIdentity
+            {
+                Id = Guid.NewGuid(),
+                OrganizationId = organizationId,
+                EmployeeId = employeeId,
+                DomainName = request.DomainName,
+                Username = request.Username,
+                UserSid = request.UserSid,
+                IsPrimary = request.IsPrimary,
+                CreatedAtUtc = nowUtc
+            };
+
+            _db.EmployeeWindowsIdentities.Add(identity);
+
+            await _adminAuditLogService.LogAsync(
+                organizationId, callerUserId, "EmployeeWindowsIdentityAdded", "Employee", employeeId, employee.DisplayName,
+                $"Registered Windows identity '{request.Username}' ({request.UserSid}).", cancellationToken);
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            return ApiResponse<EmployeeWindowsIdentityDto>.SuccessResponse(new EmployeeWindowsIdentityDto
+            {
+                Id = identity.Id,
+                EmployeeId = identity.EmployeeId,
+                DomainName = identity.DomainName,
+                Username = identity.Username,
+                UserSid = identity.UserSid,
+                IsPrimary = identity.IsPrimary,
+                CreatedAtUtc = identity.CreatedAtUtc,
+                RevokedAtUtc = identity.RevokedAtUtc
+            }, "Windows identity registered successfully.", "تم تسجيل الهوية بنجاح");
+        }
+
+        public async Task<ApiResponse<bool>> RevokeWindowsIdentityAsync(
+            Guid organizationId, Guid employeeId, Guid identityId, Guid callerUserId, CancellationToken cancellationToken = default)
+        {
+            var identity = await _db.EmployeeWindowsIdentities
+                .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployeeId == employeeId && x.Id == identityId, cancellationToken);
+
+            if (identity == null)
+            {
+                return ApiResponse<bool>.FailureResponse("Windows identity was not found.", "الهوية غير موجودة");
+            }
+
+            if (identity.RevokedAtUtc != null)
+            {
+                return ApiResponse<bool>.FailureResponse("Windows identity is already revoked.", "الهوية مُلغاة بالفعل");
+            }
+
+            identity.RevokedAtUtc = DateTimeOffset.UtcNow;
+
+            await _adminAuditLogService.LogAsync(
+                organizationId, callerUserId, "EmployeeWindowsIdentityRevoked", "Employee", employeeId, null,
+                $"Revoked Windows identity '{identity.Username}' ({identity.UserSid}).", cancellationToken);
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            return ApiResponse<bool>.SuccessResponse(true, "Windows identity revoked successfully.", "تم إلغاء الهوية بنجاح");
+        }
     }
 }

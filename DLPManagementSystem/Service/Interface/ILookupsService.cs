@@ -14,5 +14,6 @@ namespace DLPManagementSystem.Service.Interface
         Task<List<DepartmentLookupDto>> GetDepartmentsAsync(Guid organizationId, CancellationToken cancellationToken = default);
         Task<List<PermissionActionDto>> GetPermissionActionsAsync(CancellationToken cancellationToken = default);
         Task<List<LookupItemDto>> GetAuditDecisionsAsync(CancellationToken cancellationToken = default);
+        Task<List<LookupItemDto>> GetDemoRequestStatusesAsync(CancellationToken cancellationToken = default);
     }
 }

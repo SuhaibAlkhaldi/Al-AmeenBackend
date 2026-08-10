@@ -9,16 +9,19 @@ namespace DLPManagementSystem.Service.Service
     public class AgentPolicyService : IAgentPolicyService
     {
         private readonly DLPSystemContext _db;
+        private readonly IPolicySigningService _policySigningService;
 
-        public AgentPolicyService(DLPSystemContext db)
+        public AgentPolicyService(DLPSystemContext db, IPolicySigningService policySigningService)
         {
             _db = db;
+            _policySigningService = policySigningService;
         }
 
         public async Task<ApiResponse<AgentPolicyResultDto>> GetPolicyAsync(
             Guid organizationId,
             Guid deviceId,
             long currentVersion,
+            string? userSid,
             CancellationToken cancellationToken = default)
         {
             var nowUtc = DateTimeOffset.UtcNow;
@@ -56,7 +59,7 @@ namespace DLPManagementSystem.Service.Service
             }
 
             var defaultPermissions = await BuildDefaultPermissionsAsync(cancellationToken);
-            var grants = await BuildGrantsForDeviceAsync(organizationId, device.Id, nowUtc, cancellationToken);
+            var grants = await BuildGrantsForDeviceAsync(organizationId, device.Id, userSid, nowUtc, cancellationToken);
             var watermarkEnabled = BuildEffectiveWatermarkEnabled(grants);
 
             var snapshot = BuildPolicySnapshot(
@@ -90,28 +93,49 @@ namespace DLPManagementSystem.Service.Service
                 "يوجد تحديث جديد للسياسة");
         }
 
-        // The device's currently-assigned employee's active grants, re-keyed to a DeviceId-scoped
+        // The device's currently-active employee's active grants, re-keyed to a DeviceId-scoped
         // grant (the agent already knows how to match DeviceId — it has no concept of "Employee").
         // Includes grants targeted at this specific device as well as employee-wide ones (TargetDeviceId
         // null). Only RuntimeStatus == Active grants are sent; Pending/Expired/Revoked stay server-side.
+        //
+        // Shared-device support: a device can have more than one active DeviceUserAssignment (a shared
+        // workstation authorized for several employees). "Currently-active employee" is resolved as:
+        //   - Zero active assignments: no employee (unchanged from before shared-device support).
+        //   - Exactly one active assignment: that employee, unconditionally — deliberately NOT gated on
+        //     userSid matching anything, so every existing single-assignment device keeps working
+        //     exactly as it does today even though EmployeeWindowsIdentities is not populated for it
+        //     (this is the compatibility guarantee this feature was built under).
+        //   - More than one active assignment: resolved via userSid (the Agent's current interactive
+        //     console user, sent as an unsigned query parameter — see AgentPolicyController) matched
+        //     against EmployeeWindowsIdentities, restricted to only the employees officially assigned to
+        //     THIS device. No match (unrecognized SID, or no SID sent) falls through to no employee —
+        //     same "unknown subject -> GlobalDefaultDeny/Allow" behavior as always, never "pick anyone."
         private async Task<List<AgentPermissionGrantDto>> BuildGrantsForDeviceAsync(
             Guid organizationId,
             Guid deviceId,
+            string? userSid,
             DateTimeOffset nowUtc,
             CancellationToken cancellationToken)
         {
-            var assignedEmployeeId = await _db.DeviceUserAssignments
+            var activeAssignedEmployeeIds = await _db.DeviceUserAssignments
                 .AsNoTracking()
                 .Where(x => x.DeviceId == deviceId && x.UnassignedAtUtc == null)
-                .Select(x => (Guid?)x.EmployeeId)
-                .FirstOrDefaultAsync(cancellationToken);
+                .Select(x => x.EmployeeId)
+                .ToListAsync(cancellationToken);
 
-            if (assignedEmployeeId == null)
+            Guid? resolvedEmployeeId = activeAssignedEmployeeIds.Count switch
+            {
+                0 => null,
+                1 => activeAssignedEmployeeIds[0],
+                _ => await ResolveEmployeeBySidAsync(organizationId, activeAssignedEmployeeIds, userSid, cancellationToken)
+            };
+
+            if (resolvedEmployeeId == null)
             {
                 return new List<AgentPermissionGrantDto>();
             }
 
-            var employeeIdString = assignedEmployeeId.Value.ToString();
+            var employeeIdString = resolvedEmployeeId.Value.ToString();
 
             var candidates = await _db.PermissionGrants
                 .AsNoTracking()
@@ -154,11 +178,38 @@ namespace DLPManagementSystem.Service.Service
                     GrantedBy = g.GrantedByName,
                     CreatedAtUtc = g.CreatedAtUtc,
                     RevokedAtUtc = null,
-                    RevokedBy = null,
+                    RevokedBy = "",
                     FileHash = g.FileHash,
                     ClassificationTier = g.ClassificationTier
                 })
                 .ToList();
+        }
+
+        // Only called when a device has more than one active assignment (see BuildGrantsForDeviceAsync).
+        // Deliberately restricts the EmployeeWindowsIdentities lookup to candidateEmployeeIds (the
+        // employees actually assigned to THIS device) rather than searching org-wide by SID - the
+        // official per-device assignment stays the authorization boundary; a SID that happens to be
+        // registered for some other employee elsewhere in the organization must never grant that
+        // employee's policy on a device they were never assigned to.
+        private async Task<Guid?> ResolveEmployeeBySidAsync(
+            Guid organizationId,
+            List<Guid> candidateEmployeeIds,
+            string? userSid,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(userSid))
+            {
+                return null;
+            }
+
+            return await _db.EmployeeWindowsIdentities
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId
+                    && candidateEmployeeIds.Contains(x.EmployeeId)
+                    && x.UserSid == userSid
+                    && x.RevokedAtUtc == null)
+                .Select(x => (Guid?)x.EmployeeId)
+                .FirstOrDefaultAsync(cancellationToken);
         }
 
         // The real, admin-manageable per-action default (Allow/Deny) from PermissionActions —
@@ -177,7 +228,7 @@ namespace DLPManagementSystem.Service.Service
                 StringComparer.OrdinalIgnoreCase);
         }
 
-        private static AgentPolicySnapshotDto BuildPolicySnapshot(
+        private AgentPolicySnapshotDto BuildPolicySnapshot(
             Guid policyId,
             long versionNumber,
             Guid organizationId,
@@ -187,7 +238,22 @@ namespace DLPManagementSystem.Service.Service
             List<AgentPermissionGrantDto> grants,
             bool watermarkEnabled)
         {
-            return new AgentPolicySnapshotDto
+            // Runtime/Backend below are agent-local-only concerns (see PolicyStore.
+            // PreserveLocalOnlySections on the agent side) - left at their own honest defaults rather
+            // than fabricated values this backend has no authority over. TenantId is the one real,
+            // backend-known fact worth actually sending in Backend; everything else there is just
+            // "what this section defaults to," present only so the signed payload's shape matches
+            // what the agent reconstructs.
+            //
+            // Runtime.Mode is the one exception - it MUST be derived from whether signing is actually
+            // going to produce a real signature (_policySigningService.HasRealKey), never hardcoded
+            // independently. PolicySnapshotValidator's unsigned-dev bypass on the agent side requires
+            // BOTH SignatureBase64=="DEVELOPMENT-UNSIGNED" AND Runtime.Mode=="Development" to be true
+            // together - if this ever hardcodes "Production" again while a real key isn't configured,
+            // every Development-mode agent's policy sync silently breaks again exactly as before.
+            var runtimeMode = _policySigningService.HasRealKey ? "Production" : "Development";
+
+            var snapshot = new AgentPolicySnapshotDto
             {
                 PolicyId = policyId,
                 Version = versionNumber,
@@ -195,35 +261,14 @@ namespace DLPManagementSystem.Service.Service
                 DeviceId = deviceId,
                 IssuedAtUtc = nowUtc,
                 ExpiresAtUtc = nowUtc.AddDays(7),
-                SignatureAlgorithm = "DEVELOPMENT",
-                SignatureBase64 = "DEVELOPMENT-UNSIGNED",
                 Policy = new AgentDlpPolicyDto
                 {
                     PolicyVersion = $"central-{versionNumber}",
                     Enabled = true,
-                    Runtime = new AgentRuntimePolicyDto
-                    {
-                        Mode = "Development",
-                        PersistentProtection = false,
-                        PolicyReapplySeconds = 15,
-                        KeepSessionAgentRunning = true,
-                        SessionAgentPollSeconds = 5
-                    },
+                    Runtime = new AgentRuntimePolicyDto { Mode = runtimeMode },
                     Backend = new AgentBackendPolicyDto
                     {
-                        Enabled = true,
-                        TenantId = organizationId,
-                        Mode = "Development",
-                        BaseUrl = "https://localhost:7008",
-                        RequestTimeoutSeconds = 15,
-                        AuditBatchSize = 100,
-                        AuditSyncSeconds = 3,
-                        PolicySyncSeconds = 10,
-                        HeartbeatSeconds = 15,
-                        AllowUnsignedDevelopmentPolicy = true,
-                        PolicySigningPublicKeyPem = "",
-                        AuthenticationMode = "DeviceBearerToken",
-                        CredentialName = "agent-access-token"
+                        TenantId = organizationId
                     },
                     Watermark = new AgentWatermarkPolicyDto { Enabled = watermarkEnabled },
                     Permissions = new AgentPermissionPolicyDto
@@ -234,6 +279,11 @@ namespace DLPManagementSystem.Service.Service
                     SensitiveRules = BuildDefaultSensitiveRules()
                 }
             };
+
+            var (algorithm, signatureBase64) = _policySigningService.Sign(snapshot);
+            snapshot.SignatureAlgorithm = algorithm;
+            snapshot.SignatureBase64 = signatureBase64;
+            return snapshot;
         }
 
         // Watermark is protected by default. An effective Allow for this exception removes it;

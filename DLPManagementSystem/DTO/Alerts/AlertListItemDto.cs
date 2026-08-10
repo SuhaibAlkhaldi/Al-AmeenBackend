@@ -14,6 +14,10 @@ namespace DLPManagementSystem.DTO.Alerts
 
         public string AlertStatusName { get; set; } = string.Empty;
 
+        public string DeviceName { get; set; } = string.Empty;
+
+        public string? EmployeeName { get; set; }
+
         public Guid? AssignedToUserId { get; set; }
 
         public string? AssignedToUserName { get; set; }

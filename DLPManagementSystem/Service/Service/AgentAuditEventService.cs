@@ -4,6 +4,7 @@ using DLPManagementSystem.DTO.AgentAuditEvents;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DLPManagementSystem.Service.Service
 {
@@ -20,20 +21,33 @@ namespace DLPManagementSystem.Service.Service
         };
 
         private readonly DLPSystemContext _db;
+        private readonly ILogger<AgentAuditEventService> _logger;
 
-        public AgentAuditEventService(DLPSystemContext db)
+        public AgentAuditEventService(DLPSystemContext db, ILogger<AgentAuditEventService> logger)
         {
             _db = db;
+            _logger = logger;
         }
 
         public async Task<ApiResponse<AgentAuditBatchResultDto>> ReceiveAuditEventBatchAsync(
             Guid organizationId,
             Guid deviceId,
             AgentAuditBatchRequestDto request,
+            JsonElement rawBody,
             CancellationToken cancellationToken = default)
         {
             try
             {
+                // Correlated with request.Events by array index below - System.Text.Json binds a JSON
+                // array to a List<T> element-for-element in order (a malformed element fails the whole
+                // bind rather than being silently dropped), so index correlation is safe. Falls back to
+                // an empty list - not a thrown exception - if "events" is missing/not an array for any
+                // reason, since a raw-body shape surprise shouldn't take down ingestion; every event just
+                // gets IntegrityVerified = null (not evaluated) in that case.
+                var rawEvents = rawBody.TryGetProperty("events", out var rawEventsProperty)
+                    && rawEventsProperty.ValueKind == JsonValueKind.Array
+                        ? rawEventsProperty.EnumerateArray().ToList()
+                        : new List<JsonElement>();
                 if (request.TenantId != organizationId || request.DeviceId != deviceId)
                 {
                     return ApiResponse<AgentAuditBatchResultDto>.FailureResponse(
@@ -152,11 +166,25 @@ namespace DLPManagementSystem.Service.Service
 
                 var canCreateAlerts = newAlertStatusId.HasValue && highAlertLevelId.HasValue;
 
+                // A flagged integrity mismatch is more significant than an ordinary Block decision - it
+                // suggests a compromised or malfunctioning agent, not just a normal policy denial - so it
+                // always raises a Critical alert regardless of the event's own decision, independent of
+                // (and in addition to) the Block-decision alert below.
+                var criticalAlertLevelId = await _db.AlertLevels
+                    .AsNoTracking()
+                    .Where(x => x.Name == "Critical")
+                    .Select(x => (int?)x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                var canCreateCriticalAlerts = newAlertStatusId.HasValue && criticalAlertLevelId.HasValue;
+
                 var nowUtc = DateTimeOffset.UtcNow;
                 var seenInBatch = new HashSet<Guid>();
 
-                foreach (var envelope in request.Events)
+                for (var eventIndex = 0; eventIndex < request.Events.Count; eventIndex++)
                 {
+                    var envelope = request.Events[eventIndex];
+
                     if (existingEventIdSet.Contains(envelope.EventId) || !seenInBatch.Add(envelope.EventId))
                     {
                         result.DuplicateEventIds.Add(envelope.EventId);
@@ -221,6 +249,14 @@ namespace DLPManagementSystem.Service.Service
                             ? envelope.PermissionGrantId
                             : null;
 
+                    // Verified against the RAW wire bytes for this event (see AuditIntegrityVerifier),
+                    // not a reconstructed SecurityEventEnvelopeDto - deliberately sidesteps the DTO-parity
+                    // bug class already found once for policy signing. Per product decision: a mismatch
+                    // never blocks ingestion, it's just flagged (IntegrityVerified = false) for review.
+                    var integrityVerified = eventIndex < rawEvents.Count
+                        ? AuditIntegrityVerifier.Verify(rawEvents[eventIndex])
+                        : null;
+
                     // Fields without a dedicated column on AuditEvent are preserved here for full fidelity.
                     var metadata = new
                     {
@@ -237,7 +273,6 @@ namespace DLPManagementSystem.Service.Service
                         eventSchemaVersion = envelope.EventSchemaVersion,
                         osVersion = envelope.OsVersion,
                         isDevelopmentEvent = envelope.IsDevelopmentEvent,
-                        // TODO: verify integrityHash once the agent's signing/hash algorithm is documented.
                         integrityHash = envelope.IntegrityHash,
                         rawReasonCode = reasonCodeId == null ? envelope.ReasonCode : null,
                         rawPermissionGrantId = permissionGrantId == null ? envelope.PermissionGrantId : null
@@ -261,6 +296,7 @@ namespace DLPManagementSystem.Service.Service
                         ReceivedAtUtc = nowUtc,
                         AgentVersion = envelope.AgentVersion,
                         CorrelationId = envelope.CorrelationId,
+                        IntegrityVerified = integrityVerified,
                         MetadataJson = JsonSerializer.Serialize(metadata)
                     };
 
@@ -282,6 +318,69 @@ namespace DLPManagementSystem.Service.Service
                         });
                     }
 
+                    // Independent of the Block-decision alert above - an integrity mismatch can co-occur
+                    // with any decision (or none). Always Critical: this signals the event itself may not
+                    // be trustworthy, not just that a policy denied something.
+                    if (integrityVerified == false && canCreateCriticalAlerts)
+                    {
+                        _db.Alerts.Add(new Alert
+                        {
+                            OrganizationId = organizationId,
+                            AuditEventId = auditEvent.Id,
+                            AlertLevelId = criticalAlertLevelId!.Value,
+                            AlertStatusId = newAlertStatusId!.Value,
+                            Title = $"Integrity check failed: {envelope.ActionKey}",
+                            Description = "This audit event's integrityHash did not match the recomputed hash of its received data - the event was still recorded, but its authenticity could not be verified. This may indicate a compromised or malfunctioning agent.",
+                            CreatedAtUtc = nowUtc
+                        });
+                    }
+
+                    // Also independent of the Block-decision alert above, same "independent" pattern as
+                    // the integrity-mismatch branch just above. cli.sensitive-command is a detection-only
+                    // channel (see ActionKeys.CliSensitiveCommand on the agent side) - the agent only ever
+                    // reports this ActionKey when its classifier actually matched something, so every such
+                    // event is alert-worthy regardless of what Decision the agent happened to send (which
+                    // is never "Block": nothing is actually blocked by this channel).
+                    if (envelope.ActionKey.Equals(PermissionActionKeys.CliSensitiveCommand, StringComparison.OrdinalIgnoreCase)
+                        && canCreateAlerts)
+                    {
+                        _db.Alerts.Add(new Alert
+                        {
+                            OrganizationId = organizationId,
+                            AuditEventId = auditEvent.Id,
+                            AlertLevelId = highAlertLevelId!.Value,
+                            AlertStatusId = newAlertStatusId!.Value,
+                            Title = $"Sensitive CLI command detected: {envelope.ActionKey}",
+                            Description = string.IsNullOrWhiteSpace(envelope.ReasonCode) ? null : $"Reason: {envelope.ReasonCode}",
+                            CreatedAtUtc = nowUtc
+                        });
+                    }
+
+                    // Also independent of the Block-decision alert above - a health-check transition to
+                    // "unavailable" is not a blocked command, it's a report that enforcement itself is
+                    // not actually active on this device (unsupported Windows edition, or AppIDSvc not
+                    // running), so it must alert regardless of Decision (this agent-side event is never
+                    // "Block": nothing is being blocked, that's the whole problem). The agent only ever
+                    // sends this EventType on a genuine status transition (not every apply cycle), and
+                    // uses a different EventType ("CliEnforcementRestored") once healthy again, so this
+                    // check does not need to inspect Result/ReasonCode to avoid alerting on good news.
+                    if (string.Equals(envelope.EventType, "CliEnforcementUnavailable", StringComparison.OrdinalIgnoreCase)
+                        && canCreateAlerts)
+                    {
+                        _db.Alerts.Add(new Alert
+                        {
+                            OrganizationId = organizationId,
+                            AuditEventId = auditEvent.Id,
+                            AlertLevelId = highAlertLevelId!.Value,
+                            AlertStatusId = newAlertStatusId!.Value,
+                            Title = $"CLI enforcement not active: {envelope.ActionKey}",
+                            Description = string.IsNullOrWhiteSpace(envelope.ReasonCode)
+                                ? "This device cannot actually enforce CLI execution policy (unsupported Windows edition or the Application Identity service is not running). Any CliExecute=Block policy for this device is not being enforced."
+                                : $"Reason: {envelope.ReasonCode}. This device cannot actually enforce CLI execution policy. Any CliExecute=Block policy for this device is not being enforced.",
+                            CreatedAtUtc = nowUtc
+                        });
+                    }
+
                     result.AcceptedEventIds.Add(envelope.EventId);
                 }
 
@@ -296,8 +395,11 @@ namespace DLPManagementSystem.Service.Service
                     "Audit event batch processed.",
                     "تمت معالجة دفعة الأحداث");
             }
-            catch (Exception)
+            catch (Exception exception)
             {
+                _logger.LogError(exception,
+                    "Unexpected error while receiving an audit event batch for organization {OrganizationId}, device {DeviceId}.",
+                    organizationId, deviceId);
                 return ApiResponse<AgentAuditBatchResultDto>.FailureResponse(
                     "Unexpected error occurred while receiving audit events.",
                     "حدث خطأ غير متوقع أثناء استلام الأحداث");

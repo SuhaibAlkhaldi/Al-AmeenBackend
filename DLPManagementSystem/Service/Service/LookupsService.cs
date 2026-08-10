@@ -48,6 +48,17 @@ namespace DLPManagementSystem.Service.Service
                 .ToListAsync(cancellationToken);
         }
 
+        public async Task<List<LookupItemDto>> GetDemoRequestStatusesAsync(CancellationToken cancellationToken = default)
+        {
+            // Ordered by Id (not Name, unlike the other lookups above) so the dropdown reflects the
+            // actual New -> Contacted -> Closed workflow instead of alphabetical order.
+            return await _db.DemoRequestStatuses
+                .AsNoTracking()
+                .OrderBy(x => x.Id)
+                .Select(x => new LookupItemDto { Id = x.Id, Name = x.Name })
+                .ToListAsync(cancellationToken);
+        }
+
         public async Task<List<LookupItemDto>> GetDeviceStatusesAsync(CancellationToken cancellationToken = default)
         {
             return await _db.DeviceStatuses

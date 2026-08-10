@@ -1,12 +1,14 @@
-﻿using DLPManagementSystem.Authentication;
+using DLPManagementSystem.Authentication;
 using DLPManagementSystem.Data.Seed;
 using DLPManagementSystem.Helper.Email;
 using DLPManagementSystem.Helper.Health;
 using DLPManagementSystem.Helper.Retention;
+using DLPManagementSystem.Helper.DeviceMonitoring;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.BackgroundServices;
 using DLPManagementSystem.Service.Interface;
 using DLPManagementSystem.Service.Service;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 using System.Text.Json;
@@ -17,7 +19,10 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Identity;
 using DLPManagementSystem.CompanyDlpDashboard;
+using DLPManagementSystem.Common;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,6 +65,8 @@ builder.Services.AddScoped<IAgentAuditEventService, AgentAuditEventService>();
 builder.Services.AddScoped<IAgentEnrollmentService, AgentEnrollmentService>();
 builder.Services.AddScoped<IAgentHeartbeatService, AgentHeartbeatService>();
 builder.Services.AddScoped<IAgentPolicyService, AgentPolicyService>();
+builder.Services.Configure<PolicySigningOptions>(builder.Configuration.GetSection("PolicySigning"));
+builder.Services.AddSingleton<IPolicySigningService, EcdsaPolicySigningService>();
 
 builder.Services.AddMemoryCache();
 
@@ -96,11 +103,31 @@ builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp")
 builder.Services.AddScoped<IAlertEmailService, AlertEmailService>();
 builder.Services.AddHostedService<AlertEmailNotificationWorker>();
 
+builder.Services.AddScoped<IDemoRequestEmailService, DemoRequestEmailService>();
+builder.Services.AddScoped<IDemoRequestService, DemoRequestService>();
+
 builder.Services.Configure<AuditRetentionOptions>(builder.Configuration.GetSection("AuditRetention"));
 builder.Services.AddHostedService<AuditRetentionWorker>();
 builder.Services.AddHostedService<PermissionGrantTransitionWorker>();
 
-builder.Services.AddDataProtection();
+builder.Services.Configure<DeviceStaleDetectionOptions>(builder.Configuration.GetSection("DeviceStaleDetection"));
+builder.Services.AddHostedService<DeviceStaleDetectionWorker>();
+
+// Explicit persistence + a stable application name: without these, ASP.NET Core's default Data
+// Protection keyring can differ across redeploys or across instances, silently breaking every
+// existing IDataProtector.Unwrap call (FileKeyProtectionService uses this to unwrap file encryption
+// keys) as soon as the keyring changes - previously wrapped keys become permanently unwrappable.
+// KeyStoragePath defaults to a location outside this app's own deployment directory specifically so
+// a redeploy (which typically replaces the deployment directory wholesale) doesn't lose the keyring;
+// see SECRETS.md if that directory needs to be created/made writable on the actual server ahead of time.
+var dataProtectionKeyStoragePath = builder.Configuration["DataProtection:KeyStoragePath"];
+var dataProtectionKeyDirectory = string.IsNullOrWhiteSpace(dataProtectionKeyStoragePath)
+    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "DLPManagementSystem", "DataProtectionKeys")
+    : dataProtectionKeyStoragePath;
+
+builder.Services.AddDataProtection()
+    .SetApplicationName("DLPManagementSystem")
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyDirectory));
 
 builder.Services.AddDbContext<DLPSystemContext>(options =>
 {
@@ -110,6 +137,56 @@ builder.Services.AddDbContext<DLPSystemContext>(options =>
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var jwtSecretKey = jwtSection["SecretKey"]
     ?? throw new InvalidOperationException("Jwt:SecretKey configuration is missing.");
+
+// Fail closed: refuse to start in Production with the shipped placeholder (or anything too short
+// to be a real key). Without this, "forgot to set the env var" silently ships a backend that signs
+// SuperAdmin bearer tokens with a secret that's sitting in plain text in the public source tree -
+// anyone who reads the repo can forge a valid token for any role. Documentation alone (SECRETS.md)
+// isn't enough here, unlike ConnectionStrings/ApiKey, because there's no safe default to fall back
+// to - a JWT signing key either is the real secret or it's a vulnerability.
+if (builder.Environment.IsProduction() &&
+    (jwtSecretKey == "CHANGE_THIS_TO_A_LONG_SECURE_SECRET_KEY_32_CHARS_MINIMUM" || jwtSecretKey.Length < 32))
+{
+    throw new InvalidOperationException(
+        "Jwt:SecretKey is still the placeholder (or shorter than 32 characters) while running in " +
+        "the Production environment. Set a real, unique secret via the Jwt__SecretKey environment " +
+        "variable before starting this process - see SECRETS.md.");
+}
+
+// Fail closed, same reasoning as the Jwt:SecretKey check above: without this, "forgot to set the
+// env var" silently ships a backend that sends every device an unsigned ("DEVELOPMENT-UNSIGNED")
+// policy. A Production-installed device (AllowUnsignedDevelopmentPolicy=false locally) would then
+// reject every policy update forever - a functional dead end, not just a security gap - while a
+// Development-configured device would silently accept it, which is arguably worse. There is no safe
+// default to fall back to here, so refuse to start rather than let either happen.
+var policySigningPrivateKeyPem = builder.Configuration.GetSection("PolicySigning")["PrivateKeyPem"] ?? "";
+if (builder.Environment.IsProduction())
+{
+    var isValidEcdsaPrivateKey = false;
+    if (!string.IsNullOrWhiteSpace(policySigningPrivateKeyPem))
+    {
+        try
+        {
+            using var ecdsaStartupCheck = System.Security.Cryptography.ECDsa.Create();
+            ecdsaStartupCheck.ImportFromPem(policySigningPrivateKeyPem);
+            isValidEcdsaPrivateKey = true;
+        }
+        catch
+        {
+            isValidEcdsaPrivateKey = false;
+        }
+    }
+
+    if (!isValidEcdsaPrivateKey)
+    {
+        throw new InvalidOperationException(
+            "PolicySigning:PrivateKeyPem is missing or is not a valid ECDSA private key while running " +
+            "in the Production environment. Generate a P-256 keypair (see " +
+            "win-form/Al-Ameen-windows/scripts/generate-policy-signing-keys.ps1) and set the private key " +
+            "via the PolicySigning__PrivateKeyPem environment variable before starting this process - " +
+            "see SECRETS.md.");
+    }
+}
 
 builder.Services
     .AddAuthentication(options =>
@@ -145,17 +222,45 @@ builder.Services.AddScoped<IDlpDashboardQueryService, SqlDlpDashboardQueryServic
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("DlpDashboardDevCors", policy =>
+    // This was AllowAnyOrigin() - almost certainly a quick fix for a real CORS error hit while
+    // connecting the deployed frontend (161.97.90.171:1200) to this backend, since the previous
+    // policy only ever allowed http://localhost:4200 and was never updated for the real deployed
+    // origin. AllowAnyOrigin() on an admin API that issues Bearer tokens is too broad - any site
+    // can call these endpoints cross-origin. Config-driven instead: appsettings.Development.json
+    // keeps the dev-server origin, appsettings.Production.json carries the real deployed frontend
+    // origin - update it there (or via the CORS__AllowedOrigins__0 env var) if the frontend origin
+    // ever changes, instead of hardcoding it here again.
+    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+    options.AddPolicy("DlpDashboardCors", policy =>
     {
-        policy
-            .WithOrigins("http://localhost:4200")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        if (allowedOrigins is { Length: > 0 })
+        {
+            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+        }
+        else
+        {
+            policy.WithOrigins("http://localhost:4200").AllowAnyHeader().AllowAnyMethod();
+        }
     });
 });
 
+// Basic anti-spam for the public (no-auth) demo-request submission endpoint: 5 submissions per
+// 10 minutes per client IP, with no queueing - a 6th request in the window is rejected immediately
+// with 429 rather than made to wait.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-
+    options.AddPolicy(RateLimiterPolicies.DemoRequests, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0
+            }));
+});
 
 builder.Services
     .AddHealthChecks()
@@ -165,6 +270,9 @@ builder.Services
         tags: new[] { "live" })
     .AddCheck<DatabaseHealthCheck>(
         name: "database",
+        tags: new[] { "ready" })
+    .AddCheck<PolicySigningHealthCheck>(
+        name: "policy-signing",
         tags: new[] { "ready" });
 
 var app = builder.Build();
@@ -183,11 +291,16 @@ if (app.Environment.IsDevelopment())
 var extensionContentTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 extensionContentTypes.Mappings[".crx"] = "application/x-chrome-extension";
 extensionContentTypes.Mappings[".xml"] = "application/xml";
+var extensionsPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "extensions");
+if (!Directory.Exists(extensionsPath))
+{
+    Directory.CreateDirectory(extensionsPath);
+}
+
 app.UseStaticFiles(new StaticFileOptions
 {
     RequestPath = "/extensions",
-    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
-        Path.Combine(app.Environment.ContentRootPath, "wwwroot", "extensions")),
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(extensionsPath),
     ContentTypeProvider = extensionContentTypes,
     ServeUnknownFileTypes = false
 });
@@ -213,17 +326,22 @@ static async Task WriteHealthResponseAsync(HttpContext context, HealthReport rep
     await context.Response.WriteAsync(JsonSerializer.Serialize(response));
 }
 
-app.UseCors("DlpDashboardDevCors");
-
 app.UseHttpsRedirection();
+
+app.UseRouting();
+app.UseCors("DlpDashboardCors");
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapControllers();
 
 using (var scope = app.Services.CreateScope())
 {
+    var dbContext = scope.ServiceProvider.GetRequiredService<DLPSystemContext>();
+    await dbContext.Database.MigrateAsync();
+
     var seeder = scope.ServiceProvider.GetRequiredService<IDatabaseSeeder>();
     await seeder.Seed();
 }

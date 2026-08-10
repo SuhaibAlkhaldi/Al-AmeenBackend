@@ -46,8 +46,15 @@ namespace DLPManagementSystem.Service.Service
 
             if (!string.IsNullOrWhiteSpace(request.OsVersion))
             {
-                device.OperatingSystem = request.OsVersion;
                 device.OsVersion = request.OsVersion;
+            }
+
+            // OperatingSystem is the actual edition display name (e.g. "Windows 11 Enterprise"), not
+            // OsVersion's raw Environment.OSVersion.VersionString - lets an admin see which devices
+            // even support CliExecute (AppLocker) enforcement without RDPing into each one.
+            if (!string.IsNullOrWhiteSpace(request.OperatingSystemEdition))
+            {
+                device.OperatingSystem = request.OperatingSystemEdition;
             }
 
             var latestPolicyVersion = await _db.PolicyVersions

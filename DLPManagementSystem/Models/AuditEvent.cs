@@ -55,6 +55,12 @@ public partial class AuditEvent
 
     public string? MetadataJson { get; set; }
 
+    // null = not evaluated (predates this feature, or the agent sent no hash at all); true = the
+    // agent's SHA-256 integrityHash matched what we recomputed from the raw request bytes; false =
+    // mismatch, or a hash was present but malformed - either way, flagged for review. Per product
+    // decision, a mismatch never blocks ingestion - see AuditIntegrityVerifier.
+    public bool? IntegrityVerified { get; set; }
+
     [ForeignKey("ActionKey")]
     [InverseProperty("AuditEvents")]
     public virtual PermissionAction ActionKeyNavigation { get; set; } = null!;

@@ -23,6 +23,7 @@ namespace DLPManagementSystem.Controllers
             [FromQuery] Guid tenantId,
             [FromQuery] Guid deviceId,
             [FromQuery] long currentVersion,
+            [FromQuery] string? userSid,
             CancellationToken cancellationToken)
         {
             var organizationId = User.GetOrganizationId();
@@ -37,6 +38,7 @@ namespace DLPManagementSystem.Controllers
                 organizationId,
                 authenticatedDeviceId,
                 currentVersion,
+                userSid,
                 cancellationToken);
 
             if (!response.Success)
