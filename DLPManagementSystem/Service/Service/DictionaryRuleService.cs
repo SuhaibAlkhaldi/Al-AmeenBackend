@@ -48,12 +48,8 @@ namespace DLPManagementSystem.Service.Service
             List<DictionaryRuleItemDto> rules,
             CancellationToken cancellationToken = default)
         {
-            if (rules.Count == 0)
-            {
-                return ApiResponse<DictionaryRulesResponseDto>.FailureResponse(
-                    "At least one rule is required.", "لازم قاعدة وحدة على الأقل.");
-            }
-
+            // An empty list is a valid, intentional state (admin cleared all rules) - DictionaryEvaluator
+            // already has a sensible default fallback for this case, so it's not rejected here.
             foreach (var rule in rules)
             {
                 if (!rule.Condition.Equals("AND", StringComparison.OrdinalIgnoreCase)
