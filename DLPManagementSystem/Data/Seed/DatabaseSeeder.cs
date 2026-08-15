@@ -30,6 +30,7 @@ namespace DLPManagementSystem.Data.Seed
             await SeedPermissionLookupsAsync(cancellationToken);
             await SeedPermissionActionsAsync(cancellationToken);
             await ConfigureWatermarkActionsAsync(cancellationToken);
+            await ConfigureCliActionsAsync(cancellationToken);
 
             await SeedPermissionRequestLookupsAsync(cancellationToken);
 
@@ -309,6 +310,34 @@ namespace DLPManagementSystem.Data.Seed
                 deprecatedEnable.IsEnabled = false;
             }
         }
+
+        // PAUSED 2026-08-16: CLI execution blocking is temporarily disabled agent-side (business
+        // decision, see win-form/Al-Ameen-windows/src/CompanyDlp.Service/DlpWorker.cs's commented-out
+        // ApplyMachinePoliciesAsync call). GetPermissionActionsAsync (LookupsService.cs) already
+        // filters the admin grant dropdown/list by IsEnabled == true, so flipping these two existing
+        // rows to disabled - not deleting them, same pattern ConfigureWatermarkActionsAsync above uses
+        // for "watermark.enable" - is the correct, minimal way to stop admins from granting a
+        // permission that currently does nothing. Re-enable together with the agent-side call by
+        // flipping both back to true (or deleting this method once CLI blocking is redesigned).
+        private async Task ConfigureCliActionsAsync(CancellationToken ct)
+        {
+            // Not a real block gate agentside right now - CliExecutionPolicyManager.ApplyMachinePoliciesAsync
+            // is never called while paused, so a "cli.execute" grant would be silently meaningless.
+            var cliExecute = await _db.PermissionActions.FirstOrDefaultAsync(x => x.Key == "cli.execute", ct);
+            if (cliExecute is not null)
+            {
+                cliExecute.IsEnabled = false;
+            }
+
+            // Detection-only channel fed by the same disabled enforcement path - paused alongside
+            // cli.execute for the same reason (see AgentAuditEventService's matching commented-out alert branch).
+            var cliSensitiveCommand = await _db.PermissionActions.FirstOrDefaultAsync(x => x.Key == PermissionActionKeys.CliSensitiveCommand, ct);
+            if (cliSensitiveCommand is not null)
+            {
+                cliSensitiveCommand.IsEnabled = false;
+            }
+        }
+
         private async Task AddPermissionActionIfMissing(
             string key,
             string categoryName,
