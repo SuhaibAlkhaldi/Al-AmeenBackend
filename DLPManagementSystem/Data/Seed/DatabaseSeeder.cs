@@ -475,6 +475,16 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditReasonCodeIfMissing(24, "ProcessAuditOnly", "Process Audit Only", "A screen-recording process was detected and logged under audit-only enforcement.", ct);
             await AddAuditReasonCodeIfMissing(25, "DeviceOffline", "Device Offline", "Device has not sent a heartbeat within the configured staleness window.", ct);
             await AddAuditReasonCodeIfMissing(26, "DeviceOfflineWithUnconfirmedPolicy", "Device Offline With Unconfirmed Policy", "Device has not sent a heartbeat within the staleness window and has not confirmed applying the latest published policy version.", ct);
+
+            // Confirmed 2026-08-17: the Windows agent's PermissionEvaluator actually emits
+            // "GlobalDefaultAllow" (see CompanyDlp.Core.PermissionEvaluator.ReasonCode), not
+            // "DefaultAllow" (row #1 above) - so every allowed-by-default action (e.g. file.encrypt)
+            // never matched a seeded code and showed a blank Reason Code in the portal. Likewise
+            // "ClassificationRequiresExplicitGrant" (the reason a tiered-classification decrypt gets
+            // blocked) had no seed row at all. Row #1 "DefaultAllow" is left in place rather than
+            // renamed, since it's unclear whether anything else already depends on that exact string.
+            await AddAuditReasonCodeIfMissing(27, "GlobalDefaultAllow", "Global Default Allow", "Action was allowed by global default policy.", ct);
+            await AddAuditReasonCodeIfMissing(28, "ClassificationRequiresExplicitGrant", "Classification Requires Explicit Grant", "The resource's classification requires an explicit permission grant.", ct);
         }
 
         private async Task AddAuditDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
