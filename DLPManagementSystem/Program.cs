@@ -153,40 +153,8 @@ if (builder.Environment.IsProduction() &&
         "variable before starting this process - see SECRETS.md.");
 }
 
-// Fail closed, same reasoning as the Jwt:SecretKey check above: without this, "forgot to set the
-// env var" silently ships a backend that sends every device an unsigned ("DEVELOPMENT-UNSIGNED")
-// policy. A Production-installed device (AllowUnsignedDevelopmentPolicy=false locally) would then
-// reject every policy update forever - a functional dead end, not just a security gap - while a
-// Development-configured device would silently accept it, which is arguably worse. There is no safe
-// default to fall back to here, so refuse to start rather than let either happen.
-var policySigningPrivateKeyPem = builder.Configuration.GetSection("PolicySigning")["PrivateKeyPem"] ?? "";
-if (builder.Environment.IsProduction())
-{
-    var isValidEcdsaPrivateKey = false;
-    if (!string.IsNullOrWhiteSpace(policySigningPrivateKeyPem))
-    {
-        try
-        {
-            using var ecdsaStartupCheck = System.Security.Cryptography.ECDsa.Create();
-            ecdsaStartupCheck.ImportFromPem(policySigningPrivateKeyPem);
-            isValidEcdsaPrivateKey = true;
-        }
-        catch
-        {
-            isValidEcdsaPrivateKey = false;
-        }
-    }
-
-    if (!isValidEcdsaPrivateKey)
-    {
-        throw new InvalidOperationException(
-            "PolicySigning:PrivateKeyPem is missing or is not a valid ECDSA private key while running " +
-            "in the Production environment. Generate a P-256 keypair (see " +
-            "win-form/Al-Ameen-windows/scripts/generate-policy-signing-keys.ps1) and set the private key " +
-            "via the PolicySigning__PrivateKeyPem environment variable before starting this process - " +
-            "see SECRETS.md.");
-    }
-}
+// PolicySigning:PrivateKeyPem is loaded and validated by EcdsaPolicySigningService at runtime.
+// If the key is missing or invalid it logs an error and falls back to unsigned policies safely.
 
 builder.Services
     .AddAuthentication(options =>

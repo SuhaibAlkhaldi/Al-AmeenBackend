@@ -10,3 +10,6 @@ DLPManagementSystem/wwwroot/extensions/
 
 # Audit-events archival output (AuditRetentionWorker) - real compliance data, not source
 DLPManagementSystem/App_Data/audit-archive/
+
+# Local publish/build output - not source
+DLPManagementSystem/publish-output/
