@@ -57,6 +57,19 @@ namespace DLPManagementSystem.Service.Service
                 device.OperatingSystem = request.OperatingSystemEdition;
             }
 
+            // BIOS serial number and primary NIC MAC address - the agent caches both after the first
+            // successful read (see DeviceHardwareInfoReader on the agent side), so an empty value here
+            // just means that device's agent hasn't managed to read it yet, not that it changed.
+            if (!string.IsNullOrWhiteSpace(request.SerialNumber))
+            {
+                device.SerialNumber = request.SerialNumber;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.MacAddress))
+            {
+                device.MacAddress = request.MacAddress;
+            }
+
             var latestPolicyVersion = await _db.PolicyVersions
                 .Where(x => x.OrganizationId == organizationId)
                 .OrderByDescending(x => x.VersionNumber)
