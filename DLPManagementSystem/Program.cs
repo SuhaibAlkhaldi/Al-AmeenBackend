@@ -23,12 +23,47 @@ using DLPManagementSystem.Common;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        // [ApiController] short-circuits the action (and the service layer beneath it) on any
+        // DataAnnotation failure, returning ASP.NET's default ValidationProblemDetails - English
+        // only, no messageEn/messageAr - before UserService/AuthService's own explicit password
+        // checks ever get a chance to run. This factory is what actually puts a bilingual
+        // ApiResponse in front of the caller for that case. Password-length failures (the one DTO
+        // callers hit constantly) get the same specific message PasswordPolicy defines for the
+        // service-layer checks; everything else gets one simple generic message rather than trying
+        // to translate every possible DataAnnotation error text.
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var erroringFields = context.ModelState
+                .Where(entry => entry.Value?.Errors.Count > 0)
+                .Select(entry => entry.Key)
+                .ToArray();
+
+            var passwordFieldNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Password", "NewPassword", "CurrentPassword"
+            };
+
+            var isPasswordOnlyFailure = erroringFields.Length > 0 && erroringFields.All(passwordFieldNames.Contains);
+
+            var response = isPasswordOnlyFailure
+                ? ApiResponse<object>.FailureResponse(PasswordPolicy.MessageEn, PasswordPolicy.MessageAr)
+                : ApiResponse<object>.FailureResponse(
+                    "Please check the fields marked below.",
+                    "الرجاء التحقق من الحقول المحددة أدناه.");
+
+            return new BadRequestObjectResult(response);
+        };
+    });
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -245,6 +280,32 @@ builder.Services
 
 var app = builder.Build();
 
+// Catch-all for anything an action/service didn't already wrap in an ApiResponse (an unhandled
+// exception anywhere downstream) - without this, ASP.NET's bare default 500 leaks straight to the
+// caller with no messageEn/messageAr, and in Development it would leak the raw exception. Registered
+// first so it wraps every other middleware below. The real exception is logged server-side either
+// way; the client only ever sees the generic bilingual message, in every environment.
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        if (exception != null)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+            logger.LogError(exception, "Unhandled exception while processing {Method} {Path}", context.Request.Method, context.Request.Path);
+        }
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+
+        var response = ApiResponse<object>.FailureResponse(
+            "An unexpected error occurred. Please try again later.",
+            "حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى لاحقًا");
+
+        await context.Response.WriteAsJsonAsync(response);
+    });
+});
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

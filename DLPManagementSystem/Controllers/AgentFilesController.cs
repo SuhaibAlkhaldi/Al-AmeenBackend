@@ -57,12 +57,16 @@ namespace DLPManagementSystem.Controllers
             }
             catch (System.Text.Json.JsonException)
             {
-                return BadRequest("request field is not valid JSON.");
+                return BadRequest(ApiResponse<object>.FailureResponse(
+                    "request field is not valid JSON.",
+                    "الحقل request غير صالح بصيغة JSON"));
             }
 
             if (parsedRequest == null)
             {
-                return BadRequest("request field is required.");
+                return BadRequest(ApiResponse<object>.FailureResponse(
+                    "request field is required.",
+                    "الحقل request مطلوب"));
             }
 
             await using var fileStream = file?.OpenReadStream();
@@ -84,7 +88,9 @@ namespace DLPManagementSystem.Controllers
 
             if (request.TenantId != organizationId || request.DeviceId != deviceId)
             {
-                return BadRequest("tenantId/deviceId do not match the authenticated device.");
+                return BadRequest(ApiResponse<object>.FailureResponse(
+                    "tenantId/deviceId do not match the authenticated device.",
+                    "لا يتطابق tenantId/deviceId مع الجهاز المصادَق عليه"));
             }
 
             var response = _fileKeyProtectionService.Wrap(request);
@@ -105,7 +111,9 @@ namespace DLPManagementSystem.Controllers
 
             if (request.TenantId != organizationId || request.DeviceId != deviceId)
             {
-                return BadRequest("tenantId/deviceId do not match the authenticated device.");
+                return BadRequest(ApiResponse<object>.FailureResponse(
+                    "tenantId/deviceId do not match the authenticated device.",
+                    "لا يتطابق tenantId/deviceId مع الجهاز المصادَق عليه"));
             }
 
             var response = _fileKeyProtectionService.Unwrap(request);

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using DLPManagementSystem.Common;
 
 namespace DLPManagementSystem.DTO.Users
 {
@@ -13,8 +14,10 @@ namespace DLPManagementSystem.DTO.Users
         [StringLength(255)]
         public string Email { get; set; } = string.Empty;
 
+        // Defense in depth - UserService.CreateUserAsync performs the same check explicitly and is
+        // what actually produces the message a caller sees; see PasswordPolicy for why.
         [Required]
-        [MinLength(10)]
+        [MinLength(PasswordPolicy.MinLength)]
         public string Password { get; set; } = string.Empty;
 
         [Required]

@@ -151,6 +151,11 @@ namespace DLPManagementSystem.Service.Service
                     "كلمة المرور الحالية غير صحيحة");
             }
 
+            if (request.NewPassword.Length < PasswordPolicy.MinLength)
+            {
+                return ApiResponse<bool>.FailureResponse(PasswordPolicy.MessageEn, PasswordPolicy.MessageAr);
+            }
+
             user.PasswordHash = _passwordService.HashPassword(user, request.NewPassword);
             user.UpdatedAtUtc = DateTimeOffset.UtcNow;
 

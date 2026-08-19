@@ -110,6 +110,11 @@ namespace DLPManagementSystem.Service.Service
                 return elevationCheck;
             }
 
+            if (request.Password.Length < PasswordPolicy.MinLength)
+            {
+                return ApiResponse<UserDetailDto>.FailureResponse(PasswordPolicy.MessageEn, PasswordPolicy.MessageAr);
+            }
+
             var emailExists = await _db.Users
                 .AnyAsync(x => x.OrganizationId == organizationId && x.Email == request.Email, cancellationToken);
 
@@ -275,6 +280,11 @@ namespace DLPManagementSystem.Service.Service
             if (user == null)
             {
                 return ApiResponse<bool>.FailureResponse("User was not found.", "المستخدم غير موجود");
+            }
+
+            if (request.NewPassword.Length < PasswordPolicy.MinLength)
+            {
+                return ApiResponse<bool>.FailureResponse(PasswordPolicy.MessageEn, PasswordPolicy.MessageAr);
             }
 
             user.PasswordHash = _passwordService.HashPassword(user, request.NewPassword);
