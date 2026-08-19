@@ -228,6 +228,21 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         };
         public int ScanIntervalSeconds { get; set; } = 10;
         public bool BackfillCompleted { get; set; }
+
+        // Added to CompanyDlp.Contracts.FileClassificationPolicy (agent side) by the content-
+        // watermarking feature merge but never mirrored here - confirmed 2026-08-19 as the cause of
+        // every policy sync failing with InvalidPolicySignature (PolicySyncWorker rejecting every
+        // fetch since policy version 26, so watermark.disable and every other grant made afterward
+        // never reached any agent): the agent deserializes a policy missing these two properties, but
+        // its own class still declares them (defaulting to false), so PolicySnapshotValidator's
+        // re-serialized bytes include "filenameTaggingEnabled":false/"contentWatermarkingEnabled":false
+        // that this backend never signed. Byte mismatch -> InvalidPolicySignature on every device,
+        // unconditionally, same bug class as the BuildCommit/BuildTimestampUtc incident on
+        // AgentBackendPolicyDto above. Position (immediately before PortalBaseUrl) must match
+        // CompanyDlp.Contracts.FileClassificationPolicy exactly - see that type's own comments for
+        // why both default to false.
+        public bool FilenameTaggingEnabled { get; set; }
+        public bool ContentWatermarkingEnabled { get; set; }
         public string PortalBaseUrl { get; set; } = "";
     }
 
