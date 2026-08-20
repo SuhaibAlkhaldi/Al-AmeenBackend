@@ -38,6 +38,13 @@ public partial class User
 
     public bool IsEmailVerified { get; set; }
 
+    // True whenever this account's current password was set by someone other than the account
+    // holder (an admin-typed or auto-generated password at creation, or an admin-initiated
+    // reset) - the frontend forces a redirect to the change-password page until it's cleared.
+    // Defaults true so every newly constructed User starts in that state unless a call site
+    // (the dev seeder's known/shared credentials) explicitly opts out.
+    public bool MustChangePassword { get; set; } = true;
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public DateTimeOffset? UpdatedAtUtc { get; set; }

@@ -688,6 +688,10 @@ namespace DLPManagementSystem.Data.Seed
                     UserTypeId = adminUserType.Id,
                     RoleId = superAdminRole.Id,
                     StatusId = activeUserStatus.Id,
+                    // This is a fixed, known dev credential documented for every developer/QA session,
+                    // not a real admin-issued password - forcing a change on first login would just add
+                    // friction to every fresh dev DB with no security benefit.
+                    MustChangePassword = false,
 
                     IsEmailVerified = true,
                     LastLoginAtUtc = null,
@@ -723,6 +727,8 @@ namespace DLPManagementSystem.Data.Seed
                         UserTypeId = employeeUserType.Id,
                         RoleId = employeeRole.Id,
                         StatusId = activeUserStatus.Id,
+                        // Same fixed dev credential reasoning as admin@dlp above.
+                        MustChangePassword = false,
 
                         IsEmailVerified = true,
                         LastLoginAtUtc = null,

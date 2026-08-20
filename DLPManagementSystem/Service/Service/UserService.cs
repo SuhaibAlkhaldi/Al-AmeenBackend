@@ -170,6 +170,11 @@ namespace DLPManagementSystem.Service.Service
                 UserTypeId = request.UserTypeId,
                 StatusId = activeStatus.Id,
                 IsEmailVerified = false,
+                // request.Password is mandatory here (unlike Employee creation, there's no
+                // generate-if-omitted path needed) - still force a change on first sign-in, since the
+                // caller who typed it is an admin, not the account holder. Relies on User's own
+                // property default (true); listed explicitly since this is exactly the behavior the
+                // account-creation security review asked to confirm.
                 CreatedAtUtc = nowUtc
             };
             user.PasswordHash = _passwordService.HashPassword(user, request.Password);
@@ -298,6 +303,9 @@ namespace DLPManagementSystem.Service.Service
 
             user.PasswordHash = _passwordService.HashPassword(user, request.NewPassword);
             user.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            // The account holder didn't choose this password - force them to pick their own on next
+            // sign-in, same as a freshly created account.
+            user.MustChangePassword = true;
 
             // Never log the actual password value here - only that a reset happened.
             await _adminAuditLogService.LogAsync(

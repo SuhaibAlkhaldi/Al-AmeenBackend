@@ -15,5 +15,9 @@ namespace DLPManagementSystem.DTO.Auth
         public Guid OrganizationId { get; set; }
 
         public int UserTypeId { get; set; }
+
+        // When true, the frontend forces a redirect to the change-password page and blocks every
+        // other route until it's cleared - see User.MustChangePassword.
+        public bool MustChangePassword { get; set; }
     }
 }

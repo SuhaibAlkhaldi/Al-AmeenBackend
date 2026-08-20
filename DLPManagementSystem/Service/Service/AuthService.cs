@@ -158,6 +158,10 @@ namespace DLPManagementSystem.Service.Service
 
             user.PasswordHash = _passwordService.HashPassword(user, request.NewPassword);
             user.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            // The account holder just set their own password - the forced-change requirement (if any)
+            // is satisfied regardless of why it was set (new account, admin reset, or a voluntary
+            // change), so this always clears it.
+            user.MustChangePassword = false;
 
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -174,7 +178,8 @@ namespace DLPManagementSystem.Service.Service
                 RoleId = user.RoleId,
                 RoleName = user.Role.Name,
                 OrganizationId = user.OrganizationId,
-                UserTypeId = user.UserTypeId
+                UserTypeId = user.UserTypeId,
+                MustChangePassword = user.MustChangePassword
             };
         }
 

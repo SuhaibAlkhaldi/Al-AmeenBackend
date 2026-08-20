@@ -1,6 +1,5 @@
 using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.Employees;
-using DLPManagementSystem.Helper.Hashing;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
@@ -135,9 +134,10 @@ namespace DLPManagementSystem.Service.Service
                     "يوجد موظف بنفس الرقم الوظيفي");
             }
 
-            // Optional: lets the caller set a real login password immediately instead of the hidden,
-            // unguessable one below (which requires a separate admin reset-password call before the
-            // employee can ever sign in). Same rule UserService.CreateUserAsync enforces explicitly.
+            // Optional in the request, but never actually optional in effect: if the caller doesn't
+            // supply one, a real random password is generated below (and returned once) instead of
+            // the old hidden/unguessable hash, which left the account permanently unable to sign in
+            // until a separate admin reset - an employee with no way to ever get a first password.
             if (!string.IsNullOrEmpty(request.Password) && request.Password.Length < PasswordPolicy.MinLength)
             {
                 return ApiResponse<EmployeeDetailDto>.FailureResponse(PasswordPolicy.MessageEn, PasswordPolicy.MessageAr);
@@ -168,27 +168,34 @@ namespace DLPManagementSystem.Service.Service
 
             var nowUtc = DateTimeOffset.UtcNow;
 
+            // Every path below ends with a real, usable password - either the admin's own, or one
+            // generated here and handed back in the response exactly once. generatedPassword stays
+            // null (and is never put in the response) when the admin supplied their own.
+            string? generatedPassword = null;
+            var effectivePassword = request.Password;
+            if (string.IsNullOrEmpty(effectivePassword))
+            {
+                generatedPassword = PasswordGenerator.Generate();
+                effectivePassword = generatedPassword;
+            }
+
             var linkedUser = new User
             {
                 Id = Guid.NewGuid(),
                 OrganizationId = organizationId,
                 FullName = request.DisplayName,
                 Email = request.Email,
-                // A hidden, unguessable hash by default - not even in the PasswordHasher's own format,
-                // so it can never verify against anything - until an admin sets a real one (either
-                // right here via request.Password, or later through the reset-password endpoint).
-                PasswordHash = SecurityHashHelper.Sha256(SecurityHashHelper.GenerateSecret()),
+                PasswordHash = string.Empty,
                 RoleId = employeeRole.Id,
                 UserTypeId = employeeUserType.Id,
                 StatusId = activeUserStatus.Id,
                 IsEmailVerified = false,
+                // Whether the admin typed it or it was generated above, it was set by someone other
+                // than the employee - force them to pick their own on first sign-in.
+                MustChangePassword = true,
                 CreatedAtUtc = nowUtc
             };
-
-            if (!string.IsNullOrEmpty(request.Password))
-            {
-                linkedUser.PasswordHash = _passwordService.HashPassword(linkedUser, request.Password);
-            }
+            linkedUser.PasswordHash = _passwordService.HashPassword(linkedUser, effectivePassword);
 
             _db.Users.Add(linkedUser);
 
@@ -214,7 +221,13 @@ namespace DLPManagementSystem.Service.Service
 
             await _db.SaveChangesAsync(cancellationToken);
 
-            return await GetEmployeeByIdAsync(organizationId, employee.Id, cancellationToken);
+            var result = await GetEmployeeByIdAsync(organizationId, employee.Id, cancellationToken);
+            if (result.Success && result.Data != null)
+            {
+                result.Data.GeneratedPassword = generatedPassword;
+            }
+
+            return result;
         }
 
         public async Task<ApiResponse<EmployeeDetailDto>> UpdateEmployeeAsync(Guid organizationId, Guid id, Guid callerUserId, UpdateEmployeeDto request, CancellationToken cancellationToken = default)

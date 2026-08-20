@@ -911,6 +911,7 @@ public partial class DLPSystemContext : DbContext
         {
             entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
             entity.Property(e => e.CreatedAtUtc).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.MustChangePassword).HasDefaultValue(true);
 
             entity.HasOne(d => d.Organization).WithMany(p => p.Users)
                 .OnDelete(DeleteBehavior.ClientSetNull)
