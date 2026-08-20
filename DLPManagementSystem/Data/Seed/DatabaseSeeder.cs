@@ -644,7 +644,7 @@ namespace DLPManagementSystem.Data.Seed
                 organization = new Organization
                 {
                     Id = Guid.NewGuid(),
-                    Name = "Development Organization",
+                    Name = "Al-Ameen Test Org",
                     Code = "DEV",
                     IsActive = true,
                     CreatedAtUtc = nowUtc,
@@ -682,7 +682,7 @@ namespace DLPManagementSystem.Data.Seed
                 {
                     Id = Guid.NewGuid(),
                     OrganizationId = organization.Id,
-                    FullName = "Development Admin",
+                    FullName = "System Administrator",
                     Email = "admin@dlp",
                     PasswordHash = string.Empty,
                     UserTypeId = adminUserType.Id,
@@ -721,7 +721,7 @@ namespace DLPManagementSystem.Data.Seed
                     {
                         Id = Guid.NewGuid(),
                         OrganizationId = organization.Id,
-                        FullName = "Test Employee",
+                        FullName = "QA Employee",
                         Email = "employee@dlp",
                         PasswordHash = string.Empty,
                         UserTypeId = employeeUserType.Id,
