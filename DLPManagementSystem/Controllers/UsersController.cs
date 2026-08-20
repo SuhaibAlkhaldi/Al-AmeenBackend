@@ -23,13 +23,14 @@ namespace DLPManagementSystem.Controllers
             [FromQuery] string? search,
             [FromQuery] int? roleId,
             [FromQuery] int? statusId,
+            [FromQuery] int? userTypeId,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             CancellationToken cancellationToken = default)
         {
             pageSize = PagingDefaults.ClampPageSize(pageSize);
             var organizationId = User.GetOrganizationId();
-            var response = await _userService.GetUsersAsync(organizationId, search, roleId, statusId, page, pageSize, cancellationToken);
+            var response = await _userService.GetUsersAsync(organizationId, search, roleId, statusId, userTypeId, page, pageSize, cancellationToken);
             return Ok(response);
         }
 

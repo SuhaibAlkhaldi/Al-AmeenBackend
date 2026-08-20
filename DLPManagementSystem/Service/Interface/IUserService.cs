@@ -10,6 +10,7 @@ namespace DLPManagementSystem.Service.Interface
             string? search,
             int? roleId,
             int? statusId,
+            int? userTypeId,
             int page,
             int pageSize,
             CancellationToken cancellationToken = default);

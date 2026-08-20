@@ -11,11 +11,13 @@ namespace DLPManagementSystem.Service.Service
     {
         private readonly DLPSystemContext _db;
         private readonly IAdminAuditLogService _adminAuditLogService;
+        private readonly IPasswordService _passwordService;
 
-        public EmployeeService(DLPSystemContext db, IAdminAuditLogService adminAuditLogService)
+        public EmployeeService(DLPSystemContext db, IAdminAuditLogService adminAuditLogService, IPasswordService passwordService)
         {
             _db = db;
             _adminAuditLogService = adminAuditLogService;
+            _passwordService = passwordService;
         }
 
         public async Task<ApiResponse<PagedResultDto<EmployeeListItemDto>>> GetEmployeesAsync(
@@ -55,6 +57,8 @@ namespace DLPManagementSystem.Service.Service
                 .Select(x => new EmployeeListItemDto
                 {
                     Id = x.Id,
+                    UserId = x.UserId,
+                    RoleName = x.User.Role.Name,
                     DepartmentId = x.DepartmentId,
                     DepartmentName = x.Department != null ? x.Department.Name : null,
                     EmployeeNumber = x.EmployeeNumber,
@@ -86,6 +90,8 @@ namespace DLPManagementSystem.Service.Service
                 .Select(x => new EmployeeDetailDto
                 {
                     Id = x.Id,
+                    UserId = x.UserId,
+                    RoleName = x.User.Role.Name,
                     DepartmentId = x.DepartmentId,
                     DepartmentName = x.Department != null ? x.Department.Name : null,
                     EmployeeNumber = x.EmployeeNumber,
@@ -129,6 +135,14 @@ namespace DLPManagementSystem.Service.Service
                     "يوجد موظف بنفس الرقم الوظيفي");
             }
 
+            // Optional: lets the caller set a real login password immediately instead of the hidden,
+            // unguessable one below (which requires a separate admin reset-password call before the
+            // employee can ever sign in). Same rule UserService.CreateUserAsync enforces explicitly.
+            if (!string.IsNullOrEmpty(request.Password) && request.Password.Length < PasswordPolicy.MinLength)
+            {
+                return ApiResponse<EmployeeDetailDto>.FailureResponse(PasswordPolicy.MessageEn, PasswordPolicy.MessageAr);
+            }
+
             if (request.DepartmentId.HasValue)
             {
                 var departmentExists = await _db.Departments
@@ -160,6 +174,9 @@ namespace DLPManagementSystem.Service.Service
                 OrganizationId = organizationId,
                 FullName = request.DisplayName,
                 Email = request.Email,
+                // A hidden, unguessable hash by default - not even in the PasswordHasher's own format,
+                // so it can never verify against anything - until an admin sets a real one (either
+                // right here via request.Password, or later through the reset-password endpoint).
                 PasswordHash = SecurityHashHelper.Sha256(SecurityHashHelper.GenerateSecret()),
                 RoleId = employeeRole.Id,
                 UserTypeId = employeeUserType.Id,
@@ -167,6 +184,11 @@ namespace DLPManagementSystem.Service.Service
                 IsEmailVerified = false,
                 CreatedAtUtc = nowUtc
             };
+
+            if (!string.IsNullOrEmpty(request.Password))
+            {
+                linkedUser.PasswordHash = _passwordService.HashPassword(linkedUser, request.Password);
+            }
 
             _db.Users.Add(linkedUser);
 
@@ -198,6 +220,7 @@ namespace DLPManagementSystem.Service.Service
         public async Task<ApiResponse<EmployeeDetailDto>> UpdateEmployeeAsync(Guid organizationId, Guid id, Guid callerUserId, UpdateEmployeeDto request, CancellationToken cancellationToken = default)
         {
             var employee = await _db.Employees
+                .Include(x => x.User)
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
             if (employee == null)
@@ -223,6 +246,13 @@ namespace DLPManagementSystem.Service.Service
             employee.PhoneNumber = request.PhoneNumber;
             employee.StatusId = request.StatusId;
             employee.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+            // Keep the linked login account's Email/FullName in step - the portal shows a single
+            // Name/Email pair for an employee, sourced from this row, but the account someone actually
+            // signs in with is the linked User; without this they'd silently drift apart on every edit.
+            employee.User.Email = request.Email;
+            employee.User.FullName = request.DisplayName;
+            employee.User.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
             await _adminAuditLogService.LogAsync(
                 organizationId, callerUserId, "EmployeeUpdated", "Employee", employee.Id, employee.DisplayName,

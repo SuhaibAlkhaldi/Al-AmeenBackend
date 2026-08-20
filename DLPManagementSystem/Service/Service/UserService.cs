@@ -24,6 +24,7 @@ namespace DLPManagementSystem.Service.Service
             string? search,
             int? roleId,
             int? statusId,
+            int? userTypeId,
             int page,
             int pageSize,
             CancellationToken cancellationToken = default)
@@ -45,6 +46,14 @@ namespace DLPManagementSystem.Service.Service
             if (statusId.HasValue)
             {
                 query = query.Where(x => x.StatusId == statusId.Value);
+            }
+
+            // Lets a caller ask for only Admin-type (or only Employee-type) accounts - e.g. the portal's
+            // "Admin" filter uses this to exclude the hidden Employee-linked login accounts that would
+            // otherwise show up here too (every Employee has a User row, see Employee.UserId).
+            if (userTypeId.HasValue)
+            {
+                query = query.Where(x => x.UserTypeId == userTypeId.Value);
             }
 
             var totalCount = await query.CountAsync(cancellationToken);
