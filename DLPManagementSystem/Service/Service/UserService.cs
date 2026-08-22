@@ -1,4 +1,5 @@
 using DLPManagementSystem.Common;
+using DLPManagementSystem.DTO.Devices;
 using DLPManagementSystem.DTO.Users;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
@@ -11,12 +12,24 @@ namespace DLPManagementSystem.Service.Service
         private readonly DLPSystemContext _db;
         private readonly IAdminAuditLogService _adminAuditLogService;
         private readonly IPasswordService _passwordService;
+        private readonly IDeviceService _deviceService;
+        private readonly IPermissionGrantService _permissionGrantService;
+        private readonly IPermissionLookupService _permissionLookupService;
 
-        public UserService(DLPSystemContext db, IAdminAuditLogService adminAuditLogService, IPasswordService passwordService)
+        public UserService(
+            DLPSystemContext db,
+            IAdminAuditLogService adminAuditLogService,
+            IPasswordService passwordService,
+            IDeviceService deviceService,
+            IPermissionGrantService permissionGrantService,
+            IPermissionLookupService permissionLookupService)
         {
             _db = db;
             _adminAuditLogService = adminAuditLogService;
             _passwordService = passwordService;
+            _deviceService = deviceService;
+            _permissionGrantService = permissionGrantService;
+            _permissionLookupService = permissionLookupService;
         }
 
         public async Task<ApiResponse<PagedResultDto<UserListItemDto>>> GetUsersAsync(
@@ -134,26 +147,73 @@ namespace DLPManagementSystem.Service.Service
                     "يوجد مستخدم بنفس البريد الإلكتروني");
             }
 
+            // Every account gets its own accompanying Employee row now (see the reverse direction in
+            // EmployeeService.CreateEmployeeAsync) - Employee.Email has its own separate
+            // unique-per-organization index, so it must be checked here too, not just Users.Email above.
+            var employeeEmailExists = await _db.Employees
+                .AnyAsync(x => x.OrganizationId == organizationId && x.Email == request.Email, cancellationToken);
+
+            if (employeeEmailExists)
+            {
+                return ApiResponse<UserDetailDto>.FailureResponse(
+                    "An employee with this email already exists.",
+                    "يوجد موظف بنفس البريد الإلكتروني");
+            }
+
             var activeStatus = await _db.UserStatuses.FirstOrDefaultAsync(x => x.Name == "Active", cancellationToken);
             if (activeStatus == null)
             {
                 return ApiResponse<UserDetailDto>.FailureResponse("Active user status is not configured.", "حالة المستخدم النشط غير مهيأة");
             }
 
-            // A User created with the "Employee" user type needs a linked Employee row, mirroring
-            // EmployeeService.CreateEmployeeAsync's reverse direction — otherwise the account can never
-            // submit a permission request (PermissionRequestService.CreateAsync requires one).
-            var employeeUserType = await _db.UserTypes.FirstOrDefaultAsync(x => x.Name == "Employee", cancellationToken);
-            var isEmployeeUserType = employeeUserType != null && request.UserTypeId == employeeUserType.Id;
-
-            EmployeeStatus? activeEmployeeStatus = null;
-
-            if (isEmployeeUserType)
+            var activeEmployeeStatus = await _db.EmployeeStatuses.FirstOrDefaultAsync(x => x.Name == "Active", cancellationToken);
+            if (activeEmployeeStatus == null)
             {
-                activeEmployeeStatus = await _db.EmployeeStatuses.FirstOrDefaultAsync(x => x.Name == "Active", cancellationToken);
-                if (activeEmployeeStatus == null)
+                return ApiResponse<UserDetailDto>.FailureResponse("Active employee status is not configured.", "حالة الموظف النشط غير مهيأة");
+            }
+
+            // Optional here, unlike CreateEmployeeAsync (where a device is mandatory) - validated the
+            // same way when present: must exist, belong to this organization, and be Active.
+            Device? device = null;
+            if (request.DeviceId.HasValue && request.DeviceId.Value != Guid.Empty)
+            {
+                device = await _db.Devices
+                    .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == request.DeviceId.Value, cancellationToken);
+
+                if (device == null)
                 {
-                    return ApiResponse<UserDetailDto>.FailureResponse("Active employee status is not configured.", "حالة الموظف النشط غير مهيأة");
+                    return ApiResponse<UserDetailDto>.FailureResponse("Device was not found.", "الجهاز غير موجود");
+                }
+
+                var deviceActiveStatus = await _db.DeviceStatuses.FirstOrDefaultAsync(x => x.Name == "Active", cancellationToken);
+                if (deviceActiveStatus == null || device.StatusId != deviceActiveStatus.Id)
+                {
+                    return ApiResponse<UserDetailDto>.FailureResponse(
+                        "The selected device is not active.",
+                        "الجهاز المحدد غير نشط");
+                }
+            }
+
+            // "Suggested" is a purely frontend curation concept (which checkboxes to show for which
+            // role) - the backend only ever guards the real invariant, that every key submitted is a
+            // genuine, currently-enabled permission action.
+            var suggestedActionKeys = (request.SuggestedPermissionActionKeys ?? new List<string>())
+                .Distinct()
+                .ToList();
+
+            if (suggestedActionKeys.Count > 0)
+            {
+                var validActionKeys = await _db.PermissionActions
+                    .Where(x => suggestedActionKeys.Contains(x.Key) && x.IsEnabled)
+                    .Select(x => x.Key)
+                    .ToListAsync(cancellationToken);
+
+                var invalidActionKeys = suggestedActionKeys.Except(validActionKeys).ToList();
+                if (invalidActionKeys.Count > 0)
+                {
+                    return ApiResponse<UserDetailDto>.FailureResponse(
+                        $"Unknown or disabled permission action(s): {string.Join(", ", invalidActionKeys)}.",
+                        $"إجراء(ات) صلاحية غير معروفة أو معطّلة: {string.Join(", ", invalidActionKeys)}");
                 }
             }
 
@@ -181,36 +241,119 @@ namespace DLPManagementSystem.Service.Service
 
             _db.Users.Add(user);
 
-            if (isEmployeeUserType)
-            {
-                var employeeNumber = await TryGenerateUniqueEmployeeNumberAsync(organizationId, cancellationToken);
+            // Every account - Admin or Employee user type alike - gets its own Employee row now, so
+            // device assignment and permission grants (both keyed on Employee, not User - see
+            // Models/DeviceUserAssignment.cs and PermissionGrant.SubjectId) work identically
+            // regardless of account type. EmployeeNumber/DisplayName/Email/Status default sensibly
+            // for an Admin-type account that will never actually be managed from the Employee tab;
+            // DepartmentId stays null since Admin accounts aren't assigned to a company department here.
+            var employeeNumber = await TryGenerateUniqueEmployeeNumberAsync(organizationId, cancellationToken);
 
-                if (employeeNumber == null)
+            if (employeeNumber == null)
+            {
+                return ApiResponse<UserDetailDto>.FailureResponse(
+                    "Could not generate a unique employee number. Please try again.",
+                    "تعذر إنشاء رقم وظيفي فريد، يرجى المحاولة مرة أخرى");
+            }
+
+            var employee = new Employee
+            {
+                Id = Guid.NewGuid(),
+                OrganizationId = organizationId,
+                UserId = user.Id,
+                DepartmentId = null,
+                EmployeeNumber = employeeNumber,
+                DisplayName = request.FullName,
+                Email = request.Email,
+                StatusId = activeEmployeeStatus.Id,
+                CreatedAtUtc = nowUtc
+            };
+
+            _db.Employees.Add(employee);
+
+            if (suggestedActionKeys.Count > 0)
+            {
+                int decisionId;
+                int subjectTypeId;
+
+                try
                 {
-                    return ApiResponse<UserDetailDto>.FailureResponse(
-                        "Could not generate a unique employee number. Please try again.",
-                        "تعذر إنشاء رقم وظيفي فريد، يرجى المحاولة مرة أخرى");
+                    decisionId = await _permissionLookupService.GetPermissionDecisionId("Allow", cancellationToken);
+                    subjectTypeId = await _permissionLookupService.GetPermissionSubjectTypeId("Employee", cancellationToken);
+                }
+                catch (InvalidOperationException)
+                {
+                    return ApiResponse<UserDetailDto>.FailureResponse("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
                 }
 
-                _db.Employees.Add(new Employee
+                var targetRole = await _db.Roles.FirstOrDefaultAsync(x => x.Id == request.RoleId, cancellationToken);
+                var roleLabel = targetRole?.DisplayName ?? "this role";
+
+                foreach (var actionKey in suggestedActionKeys)
                 {
-                    Id = Guid.NewGuid(),
-                    OrganizationId = organizationId,
-                    UserId = user.Id,
-                    DepartmentId = null,
-                    EmployeeNumber = employeeNumber,
-                    DisplayName = request.FullName,
-                    Email = request.Email,
-                    StatusId = activeEmployeeStatus!.Id,
-                    CreatedAtUtc = nowUtc
-                });
+                    var buildResult = await _permissionGrantService.BuildGrantAsync(
+                        organizationId,
+                        actionKey,
+                        decisionId,
+                        subjectTypeId,
+                        employee.Id.ToString(),
+                        targetDeviceId: null,
+                        grantTypeName: "Permanent",
+                        requestedStartsAtUtc: null,
+                        requestedExpiresAtUtc: null,
+                        reason: $"Suggested default permission for the {roleLabel} role, selected at account creation.",
+                        grantedByUserId: callerUserId,
+                        sourcePermissionRequestId: null,
+                        cancellationToken);
+
+                    if (!buildResult.Success)
+                    {
+                        return ApiResponse<UserDetailDto>.FailureResponse(buildResult.ErrorMessageEn!, buildResult.ErrorMessageAr!);
+                    }
+                }
             }
 
             await _adminAuditLogService.LogAsync(
                 organizationId, callerUserId, "UserCreated", "User", user.Id, user.FullName,
                 $"Created user with role id {request.RoleId} and user type id {request.UserTypeId}.", cancellationToken);
 
-            await _db.SaveChangesAsync(cancellationToken);
+            // Transaction-wrapped for the same reason as EmployeeService.CreateEmployeeAsync: without
+            // it, a failure inside AssignDeviceAsync's own separate SaveChangesAsync call (e.g. two
+            // concurrent creates racing over PolicyVersionService's version-number generation for the
+            // same device) left the User+Employee(+grants) row(s) already committed - an orphaned
+            // account the caller was told never got created. Found live during this feature's
+            // concurrency audit.
+            await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+
+                // Same ordering constraint as EmployeeService.CreateEmployeeAsync: AssignDeviceAsync
+                // looks the employee up via a fresh database query, so it must run after the save
+                // above, as its own follow-up step rather than being folded into it.
+                if (device != null)
+                {
+                    var assignResult = await _deviceService.AssignDeviceAsync(
+                        organizationId,
+                        device.Id,
+                        callerUserId,
+                        new AssignDeviceDto { EmployeeId = employee.Id },
+                        cancellationToken);
+
+                    if (!assignResult.Success)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return ApiResponse<UserDetailDto>.FailureResponse(assignResult.MessageEn, assignResult.MessageAr);
+                    }
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
 
             return await GetUserByIdAsync(organizationId, user.Id, cancellationToken);
         }
@@ -352,24 +495,33 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<bool>.SuccessResponse(true, "User disabled successfully.", "تم تعطيل المستخدم بنجاح");
         }
 
+        // Which roles a caller in a given role is allowed to hand to someone else, on both create and
+        // edit. A caller role with no entry here is unrestricted (SuperAdmin today) - the map only
+        // ever narrows what a role can assign, so a role nobody has explicitly restricted defaults to
+        // "no restriction" rather than "locked out", and adding a new restricted role later is a
+        // one-line addition here, not a new branch of hand-written logic.
+        private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> AssignableRoleNamesByCallerRole =
+            new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                // HelpDesk can create/edit accounts but must never be able to hand out SuperAdmin/
+                // SecurityAdmin privileges it doesn't itself have.
+                ["HelpDesk"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "HelpDesk", "Auditor", "Employee" }
+            };
+
         private async Task<ApiResponse<UserDetailDto>?> CheckElevationAttemptAsync(string callerRoleName, int targetRoleId, CancellationToken cancellationToken)
         {
-            // HelpDesk can create/edit accounts but must never be able to hand out SuperAdmin/SecurityAdmin
-            // privileges it doesn't itself have — SuperAdmin remains unrestricted and can assign any role.
-            if (!string.Equals(callerRoleName, "HelpDesk", StringComparison.OrdinalIgnoreCase))
+            if (!AssignableRoleNamesByCallerRole.TryGetValue(callerRoleName, out var assignableRoleNames))
             {
                 return null;
             }
 
             var targetRole = await _db.Roles.FirstOrDefaultAsync(x => x.Id == targetRoleId, cancellationToken);
 
-            if (targetRole != null &&
-                (string.Equals(targetRole.Name, "SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(targetRole.Name, "SecurityAdmin", StringComparison.OrdinalIgnoreCase)))
+            if (targetRole != null && !assignableRoleNames.Contains(targetRole.Name))
             {
                 return ApiResponse<UserDetailDto>.FailureResponse(
-                    "HelpDesk accounts are not permitted to assign the SuperAdmin or SecurityAdmin role.",
-                    "حسابات الدعم الفني غير مخوّلة لمنح صلاحية المسؤول الأعلى أو مسؤول الأمان");
+                    $"{callerRoleName} accounts are not permitted to assign the {targetRole.DisplayName} role.",
+                    $"حسابات {callerRoleName} غير مخوّلة لمنح دور {targetRole.DisplayName}");
             }
 
             return null;

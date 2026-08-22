@@ -1,3 +1,4 @@
+using DLPManagementSystem.Authorization;
 using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.Auth;
 using DLPManagementSystem.Service.Interface;
@@ -33,6 +34,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpGet("me")]
+        [AllowMustChangePassword]
         public async Task<IActionResult> Me(CancellationToken cancellationToken)
         {
             var userId = User.GetUserId();
@@ -47,6 +49,7 @@ namespace DLPManagementSystem.Controllers
         }
 
         [HttpPost("change-password")]
+        [AllowMustChangePassword]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto request, CancellationToken cancellationToken)
         {
             var userId = User.GetUserId();

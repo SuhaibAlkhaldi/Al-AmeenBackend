@@ -1,4 +1,5 @@
 using DLPManagementSystem.Authentication;
+using DLPManagementSystem.Authorization;
 using DLPManagementSystem.Data.Seed;
 using DLPManagementSystem.Helper.Email;
 using DLPManagementSystem.Helper.Health;
@@ -30,7 +31,16 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers()
+builder.Services.AddScoped<MustChangePasswordFilter>();
+
+builder.Services.AddControllers(options =>
+    {
+        // Global so no controller can forget to enforce it - see MustChangePasswordFilter for why
+        // it's still safe for [AllowAnonymous] endpoints and for the DeviceBearer-authenticated agent
+        // endpoints. AddService (rather than Add<T>) resolves it from DI per-request, which is what
+        // lets it take a scoped DLPSystemContext.
+        options.Filters.AddService<MustChangePasswordFilter>();
+    })
     .ConfigureApiBehaviorOptions(options =>
     {
         // [ApiController] short-circuits the action (and the service layer beneath it) on any

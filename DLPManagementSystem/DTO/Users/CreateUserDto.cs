@@ -25,5 +25,19 @@ namespace DLPManagementSystem.DTO.Users
 
         [Required]
         public int UserTypeId { get; set; }
+
+        // Optional, unlike CreateEmployeeDto.DeviceId - an Admin-type account is never required to
+        // own a device. When present, UserService.CreateUserAsync validates it (exists, same
+        // organization, Active) and links it exactly like the Employee create path does.
+        public Guid? DeviceId { get; set; }
+
+        // Optional. Only meaningful when a role whose job function the UI suggests defaults for
+        // (SecurityAdmin/SuperAdmin today) is selected together with DeviceId - each key here becomes
+        // its own permanent PermissionGrant for the account's linked Employee record, created as part
+        // of this same request. Never applied silently: the frontend only ever sends keys an admin
+        // explicitly checked, all unchecked by default. Any enabled PermissionAction key is accepted;
+        // the specific "suggested" set per role is a frontend curation concern, not a backend
+        // restriction - the admin already has unrestricted direct-grant access via the Access page.
+        public List<string>? SuggestedPermissionActionKeys { get; set; }
     }
 }

@@ -1,4 +1,5 @@
 using DLPManagementSystem.Common;
+using DLPManagementSystem.DTO.Devices;
 using DLPManagementSystem.DTO.Employees;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
@@ -11,12 +12,18 @@ namespace DLPManagementSystem.Service.Service
         private readonly DLPSystemContext _db;
         private readonly IAdminAuditLogService _adminAuditLogService;
         private readonly IPasswordService _passwordService;
+        private readonly IDeviceService _deviceService;
 
-        public EmployeeService(DLPSystemContext db, IAdminAuditLogService adminAuditLogService, IPasswordService passwordService)
+        public EmployeeService(
+            DLPSystemContext db,
+            IAdminAuditLogService adminAuditLogService,
+            IPasswordService passwordService,
+            IDeviceService deviceService)
         {
             _db = db;
             _adminAuditLogService = adminAuditLogService;
             _passwordService = passwordService;
+            _deviceService = deviceService;
         }
 
         public async Task<ApiResponse<PagedResultDto<EmployeeListItemDto>>> GetEmployeesAsync(
@@ -154,6 +161,33 @@ namespace DLPManagementSystem.Service.Service
                 }
             }
 
+            // Every employee created through this path must own a device from the moment they exist -
+            // unlike a non-nullable Guid, DeviceId?'s [Required] annotation actually catches an
+            // outright-missing field, but Guid.Empty (an explicit but meaningless value) slips past
+            // it, so it's checked again here explicitly.
+            if (!request.DeviceId.HasValue || request.DeviceId.Value == Guid.Empty)
+            {
+                return ApiResponse<EmployeeDetailDto>.FailureResponse(
+                    "A device must be selected for the new employee.",
+                    "يجب اختيار جهاز للموظف الجديد");
+            }
+
+            var device = await _db.Devices
+                .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == request.DeviceId.Value, cancellationToken);
+
+            if (device == null)
+            {
+                return ApiResponse<EmployeeDetailDto>.FailureResponse("Device was not found.", "الجهاز غير موجود");
+            }
+
+            var deviceActiveStatus = await _db.DeviceStatuses.FirstOrDefaultAsync(x => x.Name == "Active", cancellationToken);
+            if (deviceActiveStatus == null || device.StatusId != deviceActiveStatus.Id)
+            {
+                return ApiResponse<EmployeeDetailDto>.FailureResponse(
+                    "The selected device is not active.",
+                    "الجهاز المحدد غير نشط");
+            }
+
             var employeeRole = await _db.Roles.FirstOrDefaultAsync(x => x.Name == "Employee", cancellationToken);
             var employeeUserType = await _db.UserTypes.FirstOrDefaultAsync(x => x.Name == "Employee", cancellationToken);
             var activeUserStatus = await _db.UserStatuses.FirstOrDefaultAsync(x => x.Name == "Active", cancellationToken);
@@ -219,7 +253,43 @@ namespace DLPManagementSystem.Service.Service
                 organizationId, callerUserId, "EmployeeCreated", "Employee", employee.Id, employee.DisplayName,
                 $"Employee number {employee.EmployeeNumber}.", cancellationToken);
 
-            await _db.SaveChangesAsync(cancellationToken);
+            // Wrapped in an explicit transaction so the User+Employee save and the device assignment
+            // either both land or neither does - without this, a failure inside AssignDeviceAsync
+            // (its own separate SaveChangesAsync call, e.g. two concurrent creates racing over
+            // PolicyVersionService's version-number generation for the same device) left a real,
+            // login-capable User+Employee row committed with no device and its one-time generated
+            // password never returned to the caller - a device-less, unreachable orphaned account,
+            // silently created despite the API call reporting failure. Found live during the
+            // account-device-binding security audit's concurrency test.
+            await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+
+                // The employee row must exist in the database before AssignDeviceAsync's own lookup
+                // can find it (it queries by id, not from this context's in-memory tracked entities) -
+                // hence this only happens after the SaveChangesAsync above, as its own follow-up step
+                // rather than being folded into the same save.
+                var assignResult = await _deviceService.AssignDeviceAsync(
+                    organizationId,
+                    device.Id,
+                    callerUserId,
+                    new AssignDeviceDto { EmployeeId = employee.Id },
+                    cancellationToken);
+
+                if (!assignResult.Success)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return ApiResponse<EmployeeDetailDto>.FailureResponse(assignResult.MessageEn, assignResult.MessageAr);
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
 
             var result = await GetEmployeeByIdAsync(organizationId, employee.Id, cancellationToken);
             if (result.Success && result.Data != null)
