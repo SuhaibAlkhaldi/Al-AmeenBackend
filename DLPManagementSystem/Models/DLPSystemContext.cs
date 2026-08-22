@@ -498,6 +498,27 @@ public partial class DLPSystemContext : DbContext
         {
             entity.HasIndex(e => new { e.DeviceId, e.UserSid }, "IX_DeviceUserAssignments_Device_Active").HasFilter("([UnassignedAtUtc] IS NULL)");
 
+            // Enforces at the database level what AssignDeviceAsync's "steal" semantics only ever
+            // enforced in application code: a device can have more than one active assignment at once
+            // (AddDeviceAssignmentAsync's shared-device feature deliberately allows that - every
+            // assignment after the first is IsPrimary=false, so this filtered index never sees them),
+            // but at most one of those active assignments may be the primary/single-owner one. Without
+            // this, two concurrent AssignDeviceAsync calls for the same device (each reading "no active
+            // assignment exists yet" before either commits) could both insert an active, primary
+            // assignment for two different employees - found live during a race-condition audit; see
+            // DeviceService.AssignDeviceAsync for the corresponding catch that turns a violation of this
+            // index into a clear "try again" message instead of a generic 500.
+            entity.HasIndex(e => e.DeviceId, "UQ_DeviceUserAssignments_Device_ActivePrimary")
+                .IsUnique()
+                .HasFilter("([UnassignedAtUtc] IS NULL AND [IsPrimary] = 1)");
+
+            // Independently of the above: the same employee should never end up with two simultaneously
+            // active assignments to the same device (AddDeviceAssignmentAsync's own in-memory
+            // "already assigned?" check has the identical TOCTOU gap as AssignDeviceAsync's).
+            entity.HasIndex(e => new { e.DeviceId, e.EmployeeId }, "UQ_DeviceUserAssignments_Device_Employee_Active")
+                .IsUnique()
+                .HasFilter("([UnassignedAtUtc] IS NULL)");
+
             entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
             entity.Property(e => e.AssignedAtUtc).HasDefaultValueSql("(sysutcdatetime())");
 
@@ -939,6 +960,20 @@ public partial class DLPSystemContext : DbContext
         {
             entity.Property(e => e.Id).ValueGeneratedNever();
         });
+
+        // Backs PolicyVersionService.BumpAsync's atomic "next policy version number" - see that file
+        // for why a database-level sequence replaced the previous read-max-then-add-one pattern. One
+        // sequence shared across every organization (not one per organization) because SQL Server
+        // sequences are static schema objects that can't be parameterized by OrganizationId; a
+        // per-organization sequence would mean dynamically CREATE SEQUENCE-ing a new object for every
+        // new organization, which reintroduces exactly the kind of race (two concurrent "first bump
+        // for a brand-new org" calls both trying to create the same sequence) this change exists to
+        // eliminate, and reaches outside this file into organization creation. The uniqueness this
+        // needs to guarantee is only (OrganizationId, VersionNumber) - a single shared, strictly
+        // increasing sequence trivially satisfies that (global uniqueness implies per-org uniqueness).
+        modelBuilder.HasSequence<long>("PolicyVersionNumbers", "dbo")
+            .StartsAt(1)
+            .IncrementsBy(1);
 
         OnModelCreatingPartial(modelBuilder);
     }

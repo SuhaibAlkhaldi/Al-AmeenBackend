@@ -4,6 +4,7 @@ using DLPManagementSystem.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DLPManagementSystem.Migrations
 {
     [DbContext(typeof(DLPSystemContext))]
-    partial class DLPSystemContextModelSnapshot : ModelSnapshot
+    [Migration("20260822000751_AddPolicyVersionNumberSequence")]
+    partial class AddPolicyVersionNumberSequence
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1191,14 +1194,6 @@ namespace DLPManagementSystem.Migrations
                     b.HasIndex("OrganizationId");
 
                     b.HasIndex(new[] { "DeviceId", "UserSid" }, "IX_DeviceUserAssignments_Device_Active")
-                        .HasFilter("([UnassignedAtUtc] IS NULL)");
-
-                    b.HasIndex(new[] { "DeviceId" }, "UQ_DeviceUserAssignments_Device_ActivePrimary")
-                        .IsUnique()
-                        .HasFilter("([UnassignedAtUtc] IS NULL AND [IsPrimary] = 1)");
-
-                    b.HasIndex(new[] { "DeviceId", "EmployeeId" }, "UQ_DeviceUserAssignments_Device_Employee_Active")
-                        .IsUnique()
                         .HasFilter("([UnassignedAtUtc] IS NULL)");
 
                     b.ToTable("DeviceUserAssignments");

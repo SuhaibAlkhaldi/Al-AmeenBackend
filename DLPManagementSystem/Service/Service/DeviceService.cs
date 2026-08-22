@@ -204,39 +204,96 @@ namespace DLPManagementSystem.Service.Service
 
             var nowUtc = DateTimeOffset.UtcNow;
 
-            var activeAssignments = await _db.DeviceUserAssignments
-                .Where(x => x.DeviceId == id && x.UnassignedAtUtc == null)
-                .ToListAsync(cancellationToken);
-
-            foreach (var activeAssignment in activeAssignments)
+            // Transaction-wrapped, and the "unassign existing owners" update is saved (step 1) BEFORE
+            // the new primary assignment is even added to the change tracker (step 2) - not just for
+            // atomicity (a failure in step 2 must not leave the device ownerless), but so the two
+            // statements are guaranteed to reach the database in that order. UQ_DeviceUserAssignments_
+            // Device_ActivePrimary (see DLPSystemContext.OnModelCreating) is checked per-statement, so
+            // if EF Core were left free to batch the new INSERT ahead of the old rows' UPDATE within a
+            // single SaveChangesAsync call, this exact caller (not even a concurrent one) could trip its
+            // own new constraint.
+            //
+            // Re-entrant: EmployeeService.CreateEmployeeAsync and UserService.CreateUserAsync already
+            // wrap their own call into this method in an outer transaction on this same (scoped, shared)
+            // DbContext - EF Core's connection supports exactly one active ADO.NET transaction at a time,
+            // so unconditionally starting a new one here throws "connection is already in a transaction"
+            // for those callers. When an ambient transaction already exists, this participates in it
+            // instead of starting its own, and leaves committing/rolling it back entirely to whichever
+            // caller owns it - only a self-started transaction is committed, rolled back, or disposed here.
+            var ownsTransaction = _db.Database.CurrentTransaction == null;
+            var transaction = ownsTransaction
+                ? await _db.Database.BeginTransactionAsync(cancellationToken)
+                : _db.Database.CurrentTransaction!;
+            try
             {
-                activeAssignment.UnassignedAtUtc = nowUtc;
+                var activeAssignments = await _db.DeviceUserAssignments
+                    .Where(x => x.DeviceId == id && x.UnassignedAtUtc == null)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var activeAssignment in activeAssignments)
+                {
+                    activeAssignment.UnassignedAtUtc = nowUtc;
+                }
+
+                await _db.SaveChangesAsync(cancellationToken);
+
+                var assignment = new DeviceUserAssignment
+                {
+                    Id = Guid.NewGuid(),
+                    OrganizationId = organizationId,
+                    DeviceId = id,
+                    EmployeeId = employee.Id,
+                    UserSid = string.Empty,
+                    IsPrimary = true,
+                    AssignedAtUtc = nowUtc,
+                    AssignedByUserId = assignedByUserId
+                };
+
+                _db.DeviceUserAssignments.Add(assignment);
+
+                await _policyVersionService.BumpAsync(
+                    organizationId,
+                    assignedByUserId,
+                    "DeviceAssigned",
+                    "Device",
+                    id,
+                    $"Device '{device.MachineName}' assigned to employee '{employee.DisplayName}'.",
+                    cancellationToken);
+
+                await _db.SaveChangesAsync(cancellationToken);
+
+                if (ownsTransaction)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                }
             }
-
-            var assignment = new DeviceUserAssignment
+            catch (DbUpdateException ex) when (DbExceptionHelper.IsUniqueConstraintViolationOfIndex(ex, "UQ_DeviceUserAssignments_Device_ActivePrimary"))
             {
-                Id = Guid.NewGuid(),
-                OrganizationId = organizationId,
-                DeviceId = id,
-                EmployeeId = employee.Id,
-                UserSid = string.Empty,
-                IsPrimary = true,
-                AssignedAtUtc = nowUtc,
-                AssignedByUserId = assignedByUserId
-            };
+                if (ownsTransaction)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                }
 
-            _db.DeviceUserAssignments.Add(assignment);
+                return ApiResponse<bool>.FailureResponse(
+                    "This device was just assigned to another employee. Please refresh and try again.",
+                    "تم تعيين هذا الجهاز لموظف آخر للتو. الرجاء تحديث الصفحة والمحاولة مرة أخرى");
+            }
+            catch
+            {
+                if (ownsTransaction)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                }
 
-            await _policyVersionService.BumpAsync(
-                organizationId,
-                assignedByUserId,
-                "DeviceAssigned",
-                "Device",
-                id,
-                $"Device '{device.MachineName}' assigned to employee '{employee.DisplayName}'.",
-                cancellationToken);
-
-            await _db.SaveChangesAsync(cancellationToken);
+                throw;
+            }
+            finally
+            {
+                if (ownsTransaction)
+                {
+                    await transaction.DisposeAsync();
+                }
+            }
 
             return ApiResponse<bool>.SuccessResponse(true, "Device assigned successfully.", "تم تعيين الجهاز بنجاح");
         }
@@ -373,7 +430,28 @@ namespace DLPManagementSystem.Service.Service
                 $"Device '{device.MachineName}' additionally assigned to employee '{employee.DisplayName}' (shared device).",
                 cancellationToken);
 
-            await _db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (DbExceptionHelper.IsUniqueConstraintViolationOfIndex(ex, "UQ_DeviceUserAssignments_Device_Employee_Active"))
+            {
+                // The in-memory "already assigned?" check above has the same TOCTOU gap as
+                // AssignDeviceAsync's steal logic - two concurrent calls for the same (device, employee)
+                // pair could both pass it before either commits.
+                return ApiResponse<bool>.FailureResponse(
+                    "This employee is already actively assigned to this device.",
+                    "هذا الموظف مُعيَّن بالفعل لهذا الجهاز");
+            }
+            catch (DbUpdateException ex) when (DbExceptionHelper.IsUniqueConstraintViolationOfIndex(ex, "UQ_DeviceUserAssignments_Device_ActivePrimary"))
+            {
+                // Only reachable when activeAssignments.Count was 0 (this call's own IsPrimary decision
+                // above), i.e. two different employees racing to become the first/primary assignment on
+                // a previously-unassigned shared device at the same instant.
+                return ApiResponse<bool>.FailureResponse(
+                    "This device was just assigned to another employee. Please refresh and try again.",
+                    "تم تعيين هذا الجهاز لموظف آخر للتو. الرجاء تحديث الصفحة والمحاولة مرة أخرى");
+            }
 
             return ApiResponse<bool>.SuccessResponse(true, "Employee added to device successfully.", "تمت إضافة الموظف للجهاز بنجاح");
         }

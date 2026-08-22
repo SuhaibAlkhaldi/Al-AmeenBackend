@@ -30,5 +30,19 @@ namespace DLPManagementSystem.Common
         {
             return errorNumber is 2601 or 2627;
         }
+
+        /// <summary>
+        /// True when the violation is specifically on the named index/constraint - SQL Server's 2601/2627
+        /// error text always names the object and index it collided on (e.g. "...with unique index
+        /// 'IndexName'."), which lets a caller distinguish "my own duplicate-row check lost a race" from
+        /// an unrelated unique-index collision surfaced by the same generic SaveChangesAsync call, instead
+        /// of reporting the wrong one back to the caller.
+        /// </summary>
+        public static bool IsUniqueConstraintViolationOfIndex(DbUpdateException ex, string indexName)
+        {
+            return ex.InnerException is SqlException sqlEx
+                && IsUniqueConstraintViolationErrorNumber(sqlEx.Number)
+                && sqlEx.Message.Contains(indexName, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

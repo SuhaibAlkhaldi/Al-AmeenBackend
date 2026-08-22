@@ -440,6 +440,21 @@ namespace DLPManagementSystem.Service.Service
             }
             catch (DbUpdateException ex) when (DbExceptionHelper.IsUniqueConstraintViolation(ex))
             {
+                // The grant row and the policy-version row this method stages both land in the same
+                // SaveChangesAsync call above, so a unique-index collision here could originate from
+                // either one. PolicyVersionService.BumpAsync now draws its number from a database
+                // sequence (see that file), so a collision on UQ_PolicyVersions_Organization_Version
+                // shouldn't happen anymore in practice - but if it (or any other unrelated unique-index
+                // collision) ever did, reporting "this employee already has an active grant" would be
+                // actively misleading: that message is only true for the specific duplicate-active-grant
+                // indexes below, not for a coincidental collision on something else entirely.
+                if (DbExceptionHelper.IsUniqueConstraintViolationOfIndex(ex, "UQ_PolicyVersions_Organization_Version"))
+                {
+                    return ApiResponse<PermissionGrantDto>.FailureResponse(
+                        "A temporary conflict occurred while saving. Please try again.",
+                        "حدث تعارض مؤقت أثناء الحفظ. يرجى المحاولة مرة أخرى");
+                }
+
                 return ApiResponse<PermissionGrantDto>.FailureResponse(
                     "This employee already has an active or pending grant for this action. Revoke it first before granting again.",
                     "يوجد لدى هذا الموظف بالفعل منحة نشطة أو معلقة لهذا الإجراء. الرجاء إلغاؤها أولًا قبل المنح مرة أخرى");
