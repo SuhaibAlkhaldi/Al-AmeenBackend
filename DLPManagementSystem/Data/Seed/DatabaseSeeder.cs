@@ -30,6 +30,7 @@ namespace DLPManagementSystem.Data.Seed
             await SeedPermissionLookupsAsync(cancellationToken);
             await SeedPermissionActionsAsync(cancellationToken);
             await ConfigureWatermarkActionsAsync(cancellationToken);
+            await ConfigureCliActionsAsync(cancellationToken);
 
             await SeedPermissionRequestLookupsAsync(cancellationToken);
 
@@ -310,6 +311,34 @@ namespace DLPManagementSystem.Data.Seed
                 deprecatedEnable.IsEnabled = false;
             }
         }
+
+        // PAUSED 2026-08-16: CLI execution blocking is temporarily disabled agent-side (business
+        // decision, see win-form/Al-Ameen-windows/src/CompanyDlp.Service/DlpWorker.cs's commented-out
+        // ApplyMachinePoliciesAsync call). GetPermissionActionsAsync (LookupsService.cs) already
+        // filters the admin grant dropdown/list by IsEnabled == true, so flipping these two existing
+        // rows to disabled - not deleting them, same pattern ConfigureWatermarkActionsAsync above uses
+        // for "watermark.enable" - is the correct, minimal way to stop admins from granting a
+        // permission that currently does nothing. Re-enable together with the agent-side call by
+        // flipping both back to true (or deleting this method once CLI blocking is redesigned).
+        private async Task ConfigureCliActionsAsync(CancellationToken ct)
+        {
+            // Not a real block gate agentside right now - CliExecutionPolicyManager.ApplyMachinePoliciesAsync
+            // is never called while paused, so a "cli.execute" grant would be silently meaningless.
+            var cliExecute = await _db.PermissionActions.FirstOrDefaultAsync(x => x.Key == "cli.execute", ct);
+            if (cliExecute is not null)
+            {
+                cliExecute.IsEnabled = false;
+            }
+
+            // Detection-only channel fed by the same disabled enforcement path - paused alongside
+            // cli.execute for the same reason (see AgentAuditEventService's matching commented-out alert branch).
+            var cliSensitiveCommand = await _db.PermissionActions.FirstOrDefaultAsync(x => x.Key == PermissionActionKeys.CliSensitiveCommand, ct);
+            if (cliSensitiveCommand is not null)
+            {
+                cliSensitiveCommand.IsEnabled = false;
+            }
+        }
+
         private async Task AddPermissionActionIfMissing(
             string key,
             string categoryName,
@@ -447,6 +476,16 @@ namespace DLPManagementSystem.Data.Seed
             await AddAuditReasonCodeIfMissing(24, "ProcessAuditOnly", "Process Audit Only", "A screen-recording process was detected and logged under audit-only enforcement.", ct);
             await AddAuditReasonCodeIfMissing(25, "DeviceOffline", "Device Offline", "Device has not sent a heartbeat within the configured staleness window.", ct);
             await AddAuditReasonCodeIfMissing(26, "DeviceOfflineWithUnconfirmedPolicy", "Device Offline With Unconfirmed Policy", "Device has not sent a heartbeat within the staleness window and has not confirmed applying the latest published policy version.", ct);
+
+            // Confirmed 2026-08-17: the Windows agent's PermissionEvaluator actually emits
+            // "GlobalDefaultAllow" (see CompanyDlp.Core.PermissionEvaluator.ReasonCode), not
+            // "DefaultAllow" (row #1 above) - so every allowed-by-default action (e.g. file.encrypt)
+            // never matched a seeded code and showed a blank Reason Code in the portal. Likewise
+            // "ClassificationRequiresExplicitGrant" (the reason a tiered-classification decrypt gets
+            // blocked) had no seed row at all. Row #1 "DefaultAllow" is left in place rather than
+            // renamed, since it's unclear whether anything else already depends on that exact string.
+            await AddAuditReasonCodeIfMissing(27, "GlobalDefaultAllow", "Global Default Allow", "Action was allowed by global default policy.", ct);
+            await AddAuditReasonCodeIfMissing(28, "ClassificationRequiresExplicitGrant", "Classification Requires Explicit Grant", "The resource's classification requires an explicit permission grant.", ct);
         }
 
         private async Task AddAuditDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)

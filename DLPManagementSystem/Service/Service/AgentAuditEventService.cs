@@ -335,27 +335,42 @@ namespace DLPManagementSystem.Service.Service
                         });
                     }
 
+                    // PAUSED 2026-08-16: CLI enforcement is temporarily disabled agent-side (business
+                    // decision, see DlpWorker.ExecuteAsync's commented-out ApplyMachinePoliciesAsync
+                    // call) - the agent no longer sends cli.sensitive-command events at all while paused,
+                    // so this branch would sit dead anyway, but it's commented out here for clarity and
+                    // to avoid a stale/misleading alert type surviving in the portal. Safe to re-enable
+                    // together with the agent-side call and the CliEnforcementUnavailable branch below
+                    // when CLI blocking is turned back on. Do not delete.
+                    //
                     // Also independent of the Block-decision alert above, same "independent" pattern as
                     // the integrity-mismatch branch just above. cli.sensitive-command is a detection-only
                     // channel (see ActionKeys.CliSensitiveCommand on the agent side) - the agent only ever
                     // reports this ActionKey when its classifier actually matched something, so every such
                     // event is alert-worthy regardless of what Decision the agent happened to send (which
                     // is never "Block": nothing is actually blocked by this channel).
-                    if (envelope.ActionKey.Equals(PermissionActionKeys.CliSensitiveCommand, StringComparison.OrdinalIgnoreCase)
-                        && canCreateAlerts)
-                    {
-                        _db.Alerts.Add(new Alert
-                        {
-                            OrganizationId = organizationId,
-                            AuditEventId = auditEvent.Id,
-                            AlertLevelId = highAlertLevelId!.Value,
-                            AlertStatusId = newAlertStatusId!.Value,
-                            Title = $"Sensitive CLI command detected: {envelope.ActionKey}",
-                            Description = string.IsNullOrWhiteSpace(envelope.ReasonCode) ? null : $"Reason: {envelope.ReasonCode}",
-                            CreatedAtUtc = nowUtc
-                        });
-                    }
+                    // if (envelope.ActionKey.Equals(PermissionActionKeys.CliSensitiveCommand, StringComparison.OrdinalIgnoreCase)
+                    //     && canCreateAlerts)
+                    // {
+                    //     _db.Alerts.Add(new Alert
+                    //     {
+                    //         OrganizationId = organizationId,
+                    //         AuditEventId = auditEvent.Id,
+                    //         AlertLevelId = highAlertLevelId!.Value,
+                    //         AlertStatusId = newAlertStatusId!.Value,
+                    //         Title = $"Sensitive CLI command detected: {envelope.ActionKey}",
+                    //         Description = string.IsNullOrWhiteSpace(envelope.ReasonCode) ? null : $"Reason: {envelope.ReasonCode}",
+                    //         CreatedAtUtc = nowUtc
+                    //     });
+                    // }
 
+                    // PAUSED 2026-08-16: CLI enforcement is temporarily disabled agent-side (same reason,
+                    // same day as the branch above). CliExecutionHealthChecker/ReportHealthTransitionAsync
+                    // were already removed agent-side in an earlier change, so this EventType has not
+                    // actually been sent for a while - commented out here too for consistency and to keep
+                    // this file honest about what's currently reachable. Safe to re-enable together with
+                    // the agent-side call and the cli.sensitive-command branch above.
+                    //
                     // Also independent of the Block-decision alert above - a health-check transition to
                     // "unavailable" is not a blocked command, it's a report that enforcement itself is
                     // not actually active on this device (unsupported Windows edition, or AppIDSvc not
@@ -364,22 +379,22 @@ namespace DLPManagementSystem.Service.Service
                     // sends this EventType on a genuine status transition (not every apply cycle), and
                     // uses a different EventType ("CliEnforcementRestored") once healthy again, so this
                     // check does not need to inspect Result/ReasonCode to avoid alerting on good news.
-                    if (string.Equals(envelope.EventType, "CliEnforcementUnavailable", StringComparison.OrdinalIgnoreCase)
-                        && canCreateAlerts)
-                    {
-                        _db.Alerts.Add(new Alert
-                        {
-                            OrganizationId = organizationId,
-                            AuditEventId = auditEvent.Id,
-                            AlertLevelId = highAlertLevelId!.Value,
-                            AlertStatusId = newAlertStatusId!.Value,
-                            Title = $"CLI enforcement not active: {envelope.ActionKey}",
-                            Description = string.IsNullOrWhiteSpace(envelope.ReasonCode)
-                                ? "This device cannot actually enforce CLI execution policy (unsupported Windows edition or the Application Identity service is not running). Any CliExecute=Block policy for this device is not being enforced."
-                                : $"Reason: {envelope.ReasonCode}. This device cannot actually enforce CLI execution policy. Any CliExecute=Block policy for this device is not being enforced.",
-                            CreatedAtUtc = nowUtc
-                        });
-                    }
+                    // if (string.Equals(envelope.EventType, "CliEnforcementUnavailable", StringComparison.OrdinalIgnoreCase)
+                    //     && canCreateAlerts)
+                    // {
+                    //     _db.Alerts.Add(new Alert
+                    //     {
+                    //         OrganizationId = organizationId,
+                    //         AuditEventId = auditEvent.Id,
+                    //         AlertLevelId = highAlertLevelId!.Value,
+                    //         AlertStatusId = newAlertStatusId!.Value,
+                    //         Title = $"CLI enforcement not active: {envelope.ActionKey}",
+                    //         Description = string.IsNullOrWhiteSpace(envelope.ReasonCode)
+                    //             ? "This device cannot actually enforce CLI execution policy (unsupported Windows edition or the Application Identity service is not running). Any CliExecute=Block policy for this device is not being enforced."
+                    //             : $"Reason: {envelope.ReasonCode}. This device cannot actually enforce CLI execution policy. Any CliExecute=Block policy for this device is not being enforced.",
+                    //         CreatedAtUtc = nowUtc
+                    //     });
+                    // }
 
                     result.AcceptedEventIds.Add(envelope.EventId);
                 }

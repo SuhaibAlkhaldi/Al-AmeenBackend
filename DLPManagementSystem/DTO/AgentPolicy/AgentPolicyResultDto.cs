@@ -251,6 +251,16 @@ namespace DLPManagementSystem.DTO.AgentPolicy
     // preserves Backend/Runtime locally (defense in depth - the agent's own connection/trust settings
     // can never be overwritten by a remote snapshot, regardless of what this backend sends here or
     // ever sends by mistake in the future) - but the shape must still match exactly for signing.
+    //
+    // BuildCommit/BuildTimestampUtc were added to the agent's BackendPolicy (for the --version /
+    // BuildIdentity feature, stamped locally at install time) without ever being added here - both
+    // are non-nullable strings defaulting to "" on the agent side, so DefaultIgnoreCondition.
+    // WhenWritingNull never omits them, and every policy this backend signed was missing 2 fields the
+    // agent's own re-serialized bytes always included. Byte mismatch -> InvalidPolicySignature on
+    // every single device, unconditionally, confirmed 2026-08-17 by replaying a live captured
+    // signed response through the agent's own SignedPolicySnapshot/DlpPolicy types and diffing the
+    // reconstructed payload against the wire bytes. Values here are irrelevant (agent overwrites them
+    // locally, same as the rest of this section) - only their presence in the signed shape matters.
     public class AgentBackendPolicyDto
     {
         public bool Enabled { get; set; } = true;
@@ -266,6 +276,8 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public string PolicySigningPublicKeyPem { get; set; } = "";
         public string AuthenticationMode { get; set; } = "DeviceBearerToken";
         public string CredentialName { get; set; } = "agent-access-token";
+        public string BuildCommit { get; set; } = "";
+        public string BuildTimestampUtc { get; set; } = "";
     }
 
     public class AgentPermissionPolicyDto
