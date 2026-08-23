@@ -102,6 +102,8 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public string ChromeExtensionUpdateUrl { get; set; } = "";
         public string EdgeExtensionId { get; set; } = "";
         public string EdgeExtensionUpdateUrl { get; set; } = "";
+        public string FirefoxExtensionId { get; set; } = "";
+        public string FirefoxExtensionUpdateUrl { get; set; } = "";
     }
 
     // Mirrors CompanyDlp.Contracts.UsbPolicy field-for-field. Agent-local-only, see above.
