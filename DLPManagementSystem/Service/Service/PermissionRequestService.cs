@@ -219,10 +219,12 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<PermissionRequestDto>.SuccessResponse(dto);
         }
 
-        // Both browser.upload and browser.drag-drop are the only action keys the agent's file
-        // classification cache/scanner covers - the exact-file request path only ever makes sense for
-        // these two, so the prefill lookup below is scoped to just them rather than any action key.
-        private static readonly string[] FileScopedActionKeys = ["browser.upload", "browser.drag-drop"];
+        // The action keys the agent's file classification cache/scanner covers - the exact-file
+        // request path only ever makes sense for these, so the prefill lookup below is scoped to
+        // just them rather than any action key. file.print added alongside the browser actions: a
+        // blocked print attempt reports the printed file's hash/classification on its AuditEvent
+        // the same way a blocked upload does (see CompanyDlp.Service's PrintProtectionMonitor).
+        private static readonly string[] FileScopedActionKeys = ["browser.upload", "browser.drag-drop", "file.print"];
 
         public async Task<ApiResponse<SourceEventDetailsDto>> GetSourceEventDetailsAsync(
             Guid organizationId,

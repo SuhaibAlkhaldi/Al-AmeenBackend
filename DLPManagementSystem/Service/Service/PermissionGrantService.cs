@@ -367,11 +367,12 @@ namespace DLPManagementSystem.Service.Service
 
             if (!string.IsNullOrWhiteSpace(request.ClassificationTier))
             {
-                if (!request.ActionKey.Equals(PermissionActionKeys.FileDecrypt, StringComparison.OrdinalIgnoreCase))
+                if (!request.ActionKey.Equals(PermissionActionKeys.FileDecrypt, StringComparison.OrdinalIgnoreCase)
+                    && !request.ActionKey.Equals(PermissionActionKeys.FilePrint, StringComparison.OrdinalIgnoreCase))
                 {
                     return ApiResponse<PermissionGrantDto>.FailureResponse(
-                        "A classification tier can only be set for the file.decrypt action.",
-                        "لا يمكن تحديد مستوى التصنيف إلا لإجراء فك تشفير الملف (file.decrypt)");
+                        "A classification tier can only be set for the file.decrypt or file.print actions.",
+                        "لا يمكن تحديد مستوى التصنيف إلا لإجراء فك تشفير الملف (file.decrypt) أو الطباعة (file.print)");
                 }
 
                 if (!ClassificationTiers.Order.Contains(request.ClassificationTier))
