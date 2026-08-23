@@ -45,6 +45,7 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public AgentSoftwarePolicyDto Software { get; set; } = new();
         public AgentCliPolicyDto Cli { get; set; } = new();
         public AgentFileProtectionPolicyDto FileProtection { get; set; } = new();
+        public AgentPrintPolicyDto Print { get; set; } = new();
         public AgentFileClassificationPolicyDto FileClassification { get; set; } = new();
         public AgentBackendPolicyDto Backend { get; set; } = new();
         public AgentPermissionPolicyDto Permissions { get; set; } = new();
@@ -101,6 +102,8 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public string ChromeExtensionUpdateUrl { get; set; } = "";
         public string EdgeExtensionId { get; set; } = "";
         public string EdgeExtensionUpdateUrl { get; set; } = "";
+        public string FirefoxExtensionId { get; set; } = "";
+        public string FirefoxExtensionUpdateUrl { get; set; } = "";
     }
 
     // Mirrors CompanyDlp.Contracts.UsbPolicy field-for-field. Agent-local-only, see above.
@@ -206,6 +209,18 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public bool DeletePlaintextAfterVerifiedEncryption { get; set; } = true;
         public bool KeepEncryptedFileAfterDecryption { get; set; } = true;
         public long MaximumFileSizeBytes { get; set; } = 10L * 1024 * 1024 * 1024;
+    }
+
+    // Mirrors CompanyDlp.Contracts.PrintPolicy field-for-field. Agent-local-only, see above - this
+    // backend does not manage print enforcement mode, these are just CompanyDlp.Contracts.PrintPolicy's
+    // own default values so the signed payload matches. Added alongside the agent's PrintProtectionMonitor
+    // feature - omitting it here is exactly what broke every policy signature verification for every
+    // section, not just print, since the agent re-serializes its whole DlpPolicy (this section included)
+    // to check the signature.
+    public class AgentPrintPolicyDto
+    {
+        public bool Enabled { get; set; } = true;
+        public string EnforcementMode { get; set; } = "AuditOnly";
     }
 
     // Mirrors CompanyDlp.Contracts.FileClassificationPolicy field-for-field. Agent-local-only, see

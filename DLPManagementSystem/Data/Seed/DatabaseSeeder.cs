@@ -274,6 +274,7 @@ namespace DLPManagementSystem.Data.Seed
 
             await AddPermissionActionIfMissing("file.encrypt", "File", "File Encrypt", "Allow or deny file encryption.", "Allow", 120, ct);
             await AddPermissionActionIfMissing("file.decrypt", "File", "File Decrypt", "Allow or deny file decryption.", "Allow", 130, ct);
+            await AddPermissionActionIfMissing("file.print", "File", "File Print", "Block or allow printing of classified files.", "Deny", 135, ct);
 
             await AddPermissionActionIfMissing("software.install", "Software", "Software Install", "Block or allow software installation.", "Deny", 140, ct);
             await AddPermissionActionIfMissing("software.execute-unapproved", "Software", "Execute Unapproved Software", "Block or allow unapproved software execution.", "Deny", 150, ct);

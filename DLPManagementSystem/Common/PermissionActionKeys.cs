@@ -10,6 +10,11 @@ public static class PermissionActionKeys
     // direct grant's ClassificationTier is meaningful for - see PermissionGrantService.CreateDirectGrantAsync.
     public const string FileDecrypt = "file.decrypt";
 
+    // Mirrors CompanyDlp.Contracts.ActionKeys.FilePrint on the agent side. Also meaningful for
+    // ClassificationTier-scoped grants (e.g. "approved to print Secret-tier files"), same as
+    // FileDecrypt above - see PermissionGrantService.CreateDirectGrantAsync.
+    public const string FilePrint = "file.print";
+
     // Mirrors CompanyDlp.Contracts.ActionKeys.CliSensitiveCommand on the agent side. Every event
     // reported under this key already represents a detected match - see AgentAuditEventService's
     // independent (regardless-of-Decision) alert branch for this key.
