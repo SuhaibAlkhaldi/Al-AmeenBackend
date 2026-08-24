@@ -3,9 +3,10 @@
  wipe-production-database.sql
 ================================================================================
  Purpose : Wipe every row from the DLPSystem production database EXCEPT the
-           admin@dlp SuperAdmin user (and the small handful of lookup rows
-           that user needs to still be able to log in and for the app to
-           still boot: its Organization, Role, UserStatus and UserType).
+           admin@dlp SuperAdmin user, its own Organization, and every small
+           fixed lookup/enumeration table the app needs to boot and function
+           at all (see @LookupTablesToPreserve below - Roles, UserStatuses,
+           DeviceStatuses, PermissionActions, __EFMigrationsHistory, etc.).
            After this runs you re-provision fresh devices from a clean slate.
 
  Target  : Server 161.97.90.171,8797, Database DLPSystem (from
