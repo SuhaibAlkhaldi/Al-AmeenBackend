@@ -312,26 +312,33 @@ namespace DLPManagementSystem.Data.Seed
             }
         }
 
-        // PAUSED 2026-08-16: CLI execution blocking is temporarily disabled agent-side (business
-        // decision, see win-form/Al-Ameen-windows/src/CompanyDlp.Service/DlpWorker.cs's commented-out
-        // ApplyMachinePoliciesAsync call). GetPermissionActionsAsync (LookupsService.cs) already
-        // filters the admin grant dropdown/list by IsEnabled == true, so flipping these two existing
-        // rows to disabled - not deleting them, same pattern ConfigureWatermarkActionsAsync above uses
-        // for "watermark.enable" - is the correct, minimal way to stop admins from granting a
-        // permission that currently does nothing. Re-enable together with the agent-side call by
-        // flipping both back to true (or deleting this method once CLI blocking is redesigned).
+        // UPDATED 2026-08-24: CLI blocking enforcement itself was re-enabled agent-side
+        // (DlpWorker.cs / CliExecutionPolicyManager.cs), but these two rows are kept IsEnabled = false
+        // PERMANENTLY and DELIBERATELY, not as a pause. Business requirement as of 2026-08-24:
+        // cli.execute must never be grantable/toggleable per employee or device - it is always enforced
+        // for everyone (see CliExecutionPolicyManager.ResolveCliDenyDecisionAsync, which no longer even
+        // consults PermissionEvaluator/PermissionGrants for this action) - and it must not appear in the
+        // admin portal's grantable-permissions list at all. GetPermissionActionsAsync (LookupsService.cs)
+        // already filters that dropdown/list by IsEnabled == true, so keeping these disabled - not
+        // deleting the rows, same pattern ConfigureWatermarkActionsAsync above uses for
+        // "watermark.enable" - is the correct way to keep them out of that list while enforcement runs
+        // unconditionally regardless. Do not flip these back to true; that would both let admins create
+        // now-meaningless grants and surface cli.execute in the permissions list, both against the
+        // explicit requirement.
         private async Task ConfigureCliActionsAsync(CancellationToken ct)
         {
-            // Not a real block gate agentside right now - CliExecutionPolicyManager.ApplyMachinePoliciesAsync
-            // is never called while paused, so a "cli.execute" grant would be silently meaningless.
+            // Always denied unconditionally agentside now - see CliExecutionPolicyManager.cs. IsEnabled
+            // stays false here purely to keep this out of the grantable-permissions list; it no longer has
+            // any bearing on whether enforcement runs (it always does).
             var cliExecute = await _db.PermissionActions.FirstOrDefaultAsync(x => x.Key == "cli.execute", ct);
             if (cliExecute is not null)
             {
                 cliExecute.IsEnabled = false;
             }
 
-            // Detection-only channel fed by the same disabled enforcement path - paused alongside
-            // cli.execute for the same reason (see AgentAuditEventService's matching commented-out alert branch).
+            // Detection-only channel, kept out of the grantable-permissions list for the same reason as
+            // cli.execute above (see AgentAuditEventService's matching re-enabled alert branch - alerting
+            // for this channel is active again; only its visibility as a grantable permission is suppressed).
             var cliSensitiveCommand = await _db.PermissionActions.FirstOrDefaultAsync(x => x.Key == PermissionActionKeys.CliSensitiveCommand, ct);
             if (cliSensitiveCommand is not null)
             {
