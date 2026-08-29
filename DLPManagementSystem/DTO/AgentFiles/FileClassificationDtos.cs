@@ -12,8 +12,14 @@ namespace DLPManagementSystem.DTO.AgentFiles
 
         public static readonly IReadOnlyList<string> Order = [Public, Internal, Secret, VerySecret];
 
+        // Public used to be excluded here since no other tier-scoped action ever needed a grant for
+        // Public content (PermissionEvaluator's own Public-bypass already covers it - see
+        // ActionsRequiringGrantEvenForPublic on the agent side). file.watermark-disable breaks that
+        // assumption: it's opted into ActionsRequiringGrantEvenForPublic, same as file.print, so an
+        // employee must be able to request a Public-tier grant for it too, not just
+        // Internal/Secret/Very_Secret.
         public static bool IsValidRequestableTier(string? tier) =>
-            tier is Internal or Secret or VerySecret;
+            tier is Public or Internal or Secret or VerySecret;
     }
 
     // Mirrors CompanyDlp.Contracts.FileClassificationReasonCodes on the agent side - only the two

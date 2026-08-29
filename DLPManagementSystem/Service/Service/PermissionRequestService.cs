@@ -335,8 +335,8 @@ namespace DLPManagementSystem.Service.Service
                 if (!DTO.AgentFiles.ClassificationTiers.IsValidRequestableTier(request.ClassificationTier))
                 {
                     return ApiResponse<PermissionRequestDto>.FailureResponse(
-                        "Classification tier must be Internal, Secret, or Very_Secret.",
-                        "يجب أن يكون تصنيف الملف مقيد أو سري أو سري للغاية");
+                        "Classification tier must be Public, Internal, Secret, or Very_Secret.",
+                        "يجب أن يكون تصنيف الملف عام أو مقيد أو سري أو سري للغاية");
                 }
 
                 classificationTier = request.ClassificationTier;
