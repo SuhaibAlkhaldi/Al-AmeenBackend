@@ -276,6 +276,7 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionIfMissing("file.decrypt", "File", "File Decrypt", "Allow or deny file decryption.", "Allow", 130, ct);
             await AddPermissionActionIfMissing("file.print", "File", "File Print", "Block or allow printing of classified files.", "Deny", 135, ct);
             await AddPermissionActionIfMissing(PermissionActionKeys.FileWatermarkDisable, "File", "Hide File Watermark", "Allows the tiled watermark stamped into a file's own content to be hidden, without affecting the small classification/device corner marker.", "Deny", 136, ct);
+            await AddPermissionActionIfMissing(PermissionActionKeys.FileOpenAccess, "File", "File Open Access", "Allows opening a file the employee did not create locally themselves (received via browser download or USB copy) - denied by default at every classification tier, including Public.", "Deny", 137, ct);
 
             await AddPermissionActionIfMissing("software.install", "Software", "Software Install", "Block or allow software installation.", "Deny", 140, ct);
             await AddPermissionActionIfMissing("software.execute-unapproved", "Software", "Execute Unapproved Software", "Block or allow unapproved software execution.", "Deny", 150, ct);

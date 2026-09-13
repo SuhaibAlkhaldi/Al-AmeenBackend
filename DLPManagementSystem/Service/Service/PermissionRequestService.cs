@@ -224,7 +224,10 @@ namespace DLPManagementSystem.Service.Service
         // just them rather than any action key. file.print added alongside the browser actions: a
         // blocked print attempt reports the printed file's hash/classification on its AuditEvent
         // the same way a blocked upload does (see CompanyDlp.Service's PrintProtectionMonitor).
-        private static readonly string[] FileScopedActionKeys = ["browser.upload", "browser.drag-drop", "file.print"];
+        // file.open-access added the same way: a blocked file-open attempt reports the file's hash/
+        // classification on its AuditEvent (see CompanyDlp.Service's
+        // FileProtectionCoordinator.ExecuteOpenAccessAsync).
+        private static readonly string[] FileScopedActionKeys = ["browser.upload", "browser.drag-drop", "file.print", PermissionActionKeys.FileOpenAccess];
 
         public async Task<ApiResponse<SourceEventDetailsDto>> GetSourceEventDetailsAsync(
             Guid organizationId,

@@ -25,6 +25,17 @@ public static class PermissionActionKeys
     // apply to that employee's Internal/Public files.
     public const string FileWatermarkDisable = "file.watermark-disable";
 
+    // Mirrors CompanyDlp.Contracts.ActionKeys.FileOpenAccess on the agent side - gates opening a
+    // file the employee did NOT create locally themselves (received via browser download or USB
+    // copy; the agent applies this automatically, there is no employee opt-in). Applies to every
+    // classification tier including Public. Tier-scoped grants for this action use an EXACT tier
+    // match on the agent side (see CompanyDlp.Core.PermissionEvaluator.ActionsRequiringExactTierMatch),
+    // same as FileWatermarkDisable above - a "Secret" grant here does not also cover Internal/Public
+    // received files. An admin's blanket "open anything received, any tier" grant is just an
+    // ordinary grant with ClassificationTier left null (see PermissionGrantService.BuildGrantAsync) -
+    // no separate wildcard value needed.
+    public const string FileOpenAccess = "file.open-access";
+
     // Mirrors CompanyDlp.Contracts.ActionKeys.CliSensitiveCommand on the agent side. Every event
     // reported under this key already represents a detected match - see AgentAuditEventService's
     // independent (regardless-of-Decision) alert branch for this key.

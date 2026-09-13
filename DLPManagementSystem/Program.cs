@@ -116,7 +116,7 @@ builder.Services.AddSingleton<IPolicySigningService, EcdsaPolicySigningService>(
 builder.Services.AddMemoryCache();
 
 builder.Services.AddScoped<IPermissionLookupService, PermissionLookupService>();
-builder.Services.AddScoped<IPolicyVersionService, PolicyVersionService>();
+builder.Services.AddScoped<IPolicyVersionService, PolicyVersionService>();  
 builder.Services.AddScoped<IAdminAuditLogService, AdminAuditLogService>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<IPasswordService, PasswordService>();

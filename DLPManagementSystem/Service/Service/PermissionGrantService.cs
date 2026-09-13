@@ -369,11 +369,12 @@ namespace DLPManagementSystem.Service.Service
             {
                 if (!request.ActionKey.Equals(PermissionActionKeys.FileDecrypt, StringComparison.OrdinalIgnoreCase)
                     && !request.ActionKey.Equals(PermissionActionKeys.FilePrint, StringComparison.OrdinalIgnoreCase)
-                    && !request.ActionKey.Equals(PermissionActionKeys.FileWatermarkDisable, StringComparison.OrdinalIgnoreCase))
+                    && !request.ActionKey.Equals(PermissionActionKeys.FileWatermarkDisable, StringComparison.OrdinalIgnoreCase)
+                    && !request.ActionKey.Equals(PermissionActionKeys.FileOpenAccess, StringComparison.OrdinalIgnoreCase))
                 {
                     return ApiResponse<PermissionGrantDto>.FailureResponse(
-                        "A classification tier can only be set for the file.decrypt, file.print, or file.watermark-disable actions.",
-                        "لا يمكن تحديد مستوى التصنيف إلا لإجراء فك تشفير الملف (file.decrypt) أو الطباعة (file.print) أو إخفاء العلامة المائية (file.watermark-disable)");
+                        "A classification tier can only be set for the file.decrypt, file.print, file.watermark-disable, or file.open-access actions.",
+                        "لا يمكن تحديد مستوى التصنيف إلا لإجراء فك تشفير الملف (file.decrypt) أو الطباعة (file.print) أو إخفاء العلامة المائية (file.watermark-disable) أو فتح الملف (file.open-access)");
                 }
 
                 if (!ClassificationTiers.Order.Contains(request.ClassificationTier))
