@@ -80,6 +80,9 @@ public partial class Device
     public virtual ICollection<DeviceUserAssignment> DeviceUserAssignments { get; set; } = new List<DeviceUserAssignment>();
 
     [InverseProperty("Device")]
+    public virtual ICollection<FileInventoryRecord> FileInventoryRecords { get; set; } = new List<FileInventoryRecord>();
+
+    [InverseProperty("Device")]
     public virtual ICollection<ObservedFile> ObservedFiles { get; set; } = new List<ObservedFile>();
 
     [ForeignKey("OrganizationId")]

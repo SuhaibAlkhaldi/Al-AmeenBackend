@@ -77,6 +77,8 @@ public partial class DLPSystemContext : DbContext
 
     public virtual DbSet<EmployeeWindowsIdentity> EmployeeWindowsIdentities { get; set; }
 
+    public virtual DbSet<FileInventoryRecord> FileInventoryRecords { get; set; }
+
     public virtual DbSet<FileType> FileTypes { get; set; }
 
     public virtual DbSet<ObservedFile> ObservedFiles { get; set; }
@@ -578,6 +580,38 @@ public partial class DLPSystemContext : DbContext
             entity.HasOne(d => d.Organization).WithMany(p => p.EmployeeWindowsIdentities)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_EmployeeWindowsIdentities_Organizations");
+        });
+
+        modelBuilder.Entity<FileInventoryRecord>(entity =>
+        {
+            // At most one active (non-deleted) row per device+path - enforces the "current-state,
+            // not append-only" design at the database level. A rename/move soft-deletes the old row
+            // (freeing its slot under this filtered index) and inserts a new one; a content-only
+            // change (same device+path) updates the single active row in place instead of inserting.
+            entity.HasIndex(e => new { e.DeviceId, e.FilePath }, "UX_FileInventory_Active_DeviceId_FilePath")
+                .IsUnique()
+                .HasFilter("([IsDeleted] = 0)");
+
+            entity.Property(e => e.FileId).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.FirstSeenAtUtc).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.UpdatedAtUtc).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.IsDeleted).HasDefaultValue(false);
+
+            entity.HasOne(d => d.Device).WithMany(p => p.FileInventoryRecords)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileInventoryRecords_Devices");
+
+            entity.HasOne(d => d.Employee).WithMany(p => p.FileInventoryRecords)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileInventoryRecords_Employees");
+
+            entity.HasOne(d => d.FileType).WithMany(p => p.FileInventoryRecords)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileInventoryRecords_FileTypes");
+
+            entity.HasOne(d => d.Organization).WithMany(p => p.FileInventoryRecords)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileInventoryRecords_Organizations");
         });
 
         modelBuilder.Entity<FileType>(entity =>

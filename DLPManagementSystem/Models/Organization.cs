@@ -76,6 +76,9 @@ public partial class Organization
     public virtual ICollection<Employee> Employees { get; set; } = new List<Employee>();
 
     [InverseProperty("Organization")]
+    public virtual ICollection<FileInventoryRecord> FileInventoryRecords { get; set; } = new List<FileInventoryRecord>();
+
+    [InverseProperty("Organization")]
     public virtual ICollection<ObservedFile> ObservedFiles { get; set; } = new List<ObservedFile>();
 
     [InverseProperty("Organization")]

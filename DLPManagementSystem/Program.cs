@@ -4,6 +4,7 @@ using DLPManagementSystem.Data.Seed;
 using DLPManagementSystem.Helper.Email;
 using DLPManagementSystem.Helper.Health;
 using DLPManagementSystem.Helper.Retention;
+using DLPManagementSystem.Helper.FileInventory;
 using DLPManagementSystem.Helper.DeviceMonitoring;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.BackgroundServices;
@@ -107,6 +108,8 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddScoped<IDatabaseSeeder, DatabaseSeeder>();
 builder.Services.AddScoped<IAgentAuditEventService, AgentAuditEventService>();
+builder.Services.AddScoped<IAgentFileInventoryService, AgentFileInventoryService>();
+builder.Services.AddScoped<IFileInventoryReportService, FileInventoryReportService>();
 builder.Services.AddScoped<IAgentEnrollmentService, AgentEnrollmentService>();
 builder.Services.AddScoped<IAgentHeartbeatService, AgentHeartbeatService>();
 builder.Services.AddScoped<IAgentPolicyService, AgentPolicyService>();
@@ -153,6 +156,8 @@ builder.Services.AddScoped<IDemoRequestService, DemoRequestService>();
 
 builder.Services.Configure<AuditRetentionOptions>(builder.Configuration.GetSection("AuditRetention"));
 builder.Services.AddHostedService<AuditRetentionWorker>();
+builder.Services.Configure<FileInventoryCleanupOptions>(builder.Configuration.GetSection("FileInventoryCleanup"));
+builder.Services.AddHostedService<FileInventoryCleanupWorker>();
 builder.Services.AddHostedService<PermissionGrantTransitionWorker>();
 
 builder.Services.Configure<DeviceStaleDetectionOptions>(builder.Configuration.GetSection("DeviceStaleDetection"));

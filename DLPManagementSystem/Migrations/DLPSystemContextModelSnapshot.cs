@@ -1383,6 +1383,97 @@ namespace DLPManagementSystem.Migrations
                     b.ToTable("EmployeeWindowsIdentities");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.FileInventoryRecord", b =>
+                {
+                    b.Property<Guid>("FileId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newsequentialid())");
+
+                    b.Property<string>("ClassificationTier")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset?>("DeletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("EmployeeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Extension")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("FileHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FilePath")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int?>("FileTypeId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("FirstSeenAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("(sysutcdatetime())");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsProtected")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("LastScanAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("(sysutcdatetime())");
+
+                    b.HasKey("FileId");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("FileTypeId");
+
+                    b.HasIndex(new[] { "DeviceId", "IsDeleted" }, "IX_FileInventoryRecords_Device_Active");
+
+                    b.HasIndex(new[] { "OrganizationId", "ClassificationTier" }, "IX_FileInventoryRecords_Org_Classification");
+
+                    b.HasIndex(new[] { "DeviceId", "FilePath" }, "UX_FileInventory_Active_DeviceId_FilePath")
+                        .IsUnique()
+                        .HasFilter("([IsDeleted] = 0)");
+
+                    b.ToTable("FileInventoryRecords");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.FileType", b =>
                 {
                     b.Property<int>("Id")
@@ -3165,6 +3256,39 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.FileInventoryRecord", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.Device", "Device")
+                        .WithMany("FileInventoryRecords")
+                        .HasForeignKey("DeviceId")
+                        .IsRequired()
+                        .HasConstraintName("FK_FileInventoryRecords_Devices");
+
+                    b.HasOne("DLPManagementSystem.Models.Employee", "Employee")
+                        .WithMany("FileInventoryRecords")
+                        .HasForeignKey("EmployeeId")
+                        .HasConstraintName("FK_FileInventoryRecords_Employees");
+
+                    b.HasOne("DLPManagementSystem.Models.FileType", "FileType")
+                        .WithMany("FileInventoryRecords")
+                        .HasForeignKey("FileTypeId")
+                        .HasConstraintName("FK_FileInventoryRecords_FileTypes");
+
+                    b.HasOne("DLPManagementSystem.Models.Organization", "Organization")
+                        .WithMany("FileInventoryRecords")
+                        .HasForeignKey("OrganizationId")
+                        .IsRequired()
+                        .HasConstraintName("FK_FileInventoryRecords_Organizations");
+
+                    b.Navigation("Device");
+
+                    b.Navigation("Employee");
+
+                    b.Navigation("FileType");
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.ObservedFile", b =>
                 {
                     b.HasOne("DLPManagementSystem.Models.Device", "Device")
@@ -3736,6 +3860,8 @@ namespace DLPManagementSystem.Migrations
 
                     b.Navigation("DeviceUserAssignments");
 
+                    b.Navigation("FileInventoryRecords");
+
                     b.Navigation("ObservedFiles");
 
                     b.Navigation("PermissionGrants");
@@ -3767,12 +3893,19 @@ namespace DLPManagementSystem.Migrations
 
                     b.Navigation("EmployeeWindowsIdentities");
 
+                    b.Navigation("FileInventoryRecords");
+
                     b.Navigation("PermissionRequests");
                 });
 
             modelBuilder.Entity("DLPManagementSystem.Models.EmployeeStatus", b =>
                 {
                     b.Navigation("Employees");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileType", b =>
+                {
+                    b.Navigation("FileInventoryRecords");
                 });
 
             modelBuilder.Entity("DLPManagementSystem.Models.ObservedFile", b =>
@@ -3815,6 +3948,8 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("EmployeeWindowsIdentities");
 
                     b.Navigation("Employees");
+
+                    b.Navigation("FileInventoryRecords");
 
                     b.Navigation("ObservedFiles");
 

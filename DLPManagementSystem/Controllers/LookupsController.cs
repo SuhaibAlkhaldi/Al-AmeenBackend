@@ -87,5 +87,12 @@ namespace DLPManagementSystem.Controllers
             var data = await _lookupsService.GetDemoRequestStatusesAsync(cancellationToken);
             return Ok(ApiResponse<object>.SuccessResponse(data));
         }
+
+        [HttpGet("file-types")]
+        public async Task<IActionResult> GetFileTypes(CancellationToken cancellationToken)
+        {
+            var data = await _lookupsService.GetFileTypesAsync(cancellationToken);
+            return Ok(ApiResponse<object>.SuccessResponse(data));
+        }
     }
 }

@@ -20,4 +20,7 @@ public partial class FileType
 
     [StringLength(150)]
     public string? MimeType { get; set; }
+
+    [InverseProperty("FileType")]
+    public virtual ICollection<FileInventoryRecord> FileInventoryRecords { get; set; } = new List<FileInventoryRecord>();
 }

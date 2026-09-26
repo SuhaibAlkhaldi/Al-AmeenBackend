@@ -123,5 +123,15 @@ namespace DLPManagementSystem.Service.Service
                 .Select(x => new LookupItemDto { Id = x.Id, Name = x.DisplayName })
                 .ToListAsync(cancellationToken);
         }
+
+        // Backs the File Inventory Report's "File Type" filter (FileInventoryReportController).
+        public async Task<List<LookupItemDto>> GetFileTypesAsync(CancellationToken cancellationToken = default)
+        {
+            return await _db.FileTypes
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .Select(x => new LookupItemDto { Id = x.Id, Name = x.Name })
+                .ToListAsync(cancellationToken);
+        }
     }
 }
