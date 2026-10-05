@@ -79,6 +79,9 @@ public partial class Organization
     public virtual ICollection<FileInventoryRecord> FileInventoryRecords { get; set; } = new List<FileInventoryRecord>();
 
     [InverseProperty("Organization")]
+    public virtual ICollection<FileVersionHistory> FileVersionHistories { get; set; } = new List<FileVersionHistory>();
+
+    [InverseProperty("Organization")]
     public virtual ICollection<ObservedFile> ObservedFiles { get; set; } = new List<ObservedFile>();
 
     [InverseProperty("Organization")]

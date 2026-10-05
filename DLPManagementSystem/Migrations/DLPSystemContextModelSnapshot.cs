@@ -1395,6 +1395,10 @@ namespace DLPManagementSystem.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("ContentFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTimeOffset?>("DeletedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1474,6 +1478,55 @@ namespace DLPManagementSystem.Migrations
                     b.ToTable("FileInventoryRecords");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.FileTrackingAlertEpisode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AuditEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DistinctDeviceCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DistinctEmployeeCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("EpisodeAnchorAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("EpisodeLastObservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RuleType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuditEventId");
+
+                    b.HasIndex(new[] { "OrganizationId", "ContentFingerprint", "RuleType", "EpisodeLastObservedAtUtc" }, "IX_FileTrackingAlertEpisodes_Open");
+
+                    b.HasIndex(new[] { "OrganizationId", "ContentFingerprint", "RuleType", "EpisodeAnchorAtUtc" }, "UX_FileTrackingAlertEpisodes_Burst")
+                        .IsUnique();
+
+                    b.ToTable("FileTrackingAlertEpisodes");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.FileType", b =>
                 {
                     b.Property<int>("Id")
@@ -1499,6 +1552,88 @@ namespace DLPManagementSystem.Migrations
                         .IsUnique();
 
                     b.ToTable("FileTypes");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileVersionHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newsequentialid())");
+
+                    b.Property<bool>("ClassificationChanged")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ContentChanged")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("EmployeeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("NewClassificationTier")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("NewContentFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("NewFileHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("NewIsProtected")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("ObservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("OldClassificationTier")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("OldFileHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool?>("OldIsProtected")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("ProtectionChanged")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("SourceFileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex(new[] { "FileId", "ObservedAtUtc" }, "IX_FileVersionHistory_File_Observed");
+
+                    b.HasIndex(new[] { "NewFileHash", "ObservedAtUtc" }, "IX_FileVersionHistory_NewHash_Observed");
+
+                    b.ToTable("FileVersionHistories");
                 });
 
             modelBuilder.Entity("DLPManagementSystem.Models.ObservedFile", b =>
@@ -3289,6 +3424,51 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.FileTrackingAlertEpisode", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.AuditEvent", "AuditEvent")
+                        .WithMany()
+                        .HasForeignKey("AuditEventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DLPManagementSystem.Models.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AuditEvent");
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileVersionHistory", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.Device", "Device")
+                        .WithMany("FileVersionHistories")
+                        .HasForeignKey("DeviceId")
+                        .IsRequired()
+                        .HasConstraintName("FK_FileVersionHistory_Devices");
+
+                    b.HasOne("DLPManagementSystem.Models.Employee", "Employee")
+                        .WithMany("FileVersionHistories")
+                        .HasForeignKey("EmployeeId")
+                        .HasConstraintName("FK_FileVersionHistory_Employees");
+
+                    b.HasOne("DLPManagementSystem.Models.Organization", "Organization")
+                        .WithMany("FileVersionHistories")
+                        .HasForeignKey("OrganizationId")
+                        .IsRequired()
+                        .HasConstraintName("FK_FileVersionHistory_Organizations");
+
+                    b.Navigation("Device");
+
+                    b.Navigation("Employee");
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.ObservedFile", b =>
                 {
                     b.HasOne("DLPManagementSystem.Models.Device", "Device")
@@ -3862,6 +4042,8 @@ namespace DLPManagementSystem.Migrations
 
                     b.Navigation("FileInventoryRecords");
 
+                    b.Navigation("FileVersionHistories");
+
                     b.Navigation("ObservedFiles");
 
                     b.Navigation("PermissionGrants");
@@ -3894,6 +4076,8 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("EmployeeWindowsIdentities");
 
                     b.Navigation("FileInventoryRecords");
+
+                    b.Navigation("FileVersionHistories");
 
                     b.Navigation("PermissionRequests");
                 });
@@ -3950,6 +4134,8 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("Employees");
 
                     b.Navigation("FileInventoryRecords");
+
+                    b.Navigation("FileVersionHistories");
 
                     b.Navigation("ObservedFiles");
 

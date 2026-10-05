@@ -79,6 +79,9 @@ public partial class DLPSystemContext : DbContext
 
     public virtual DbSet<FileInventoryRecord> FileInventoryRecords { get; set; }
 
+    public virtual DbSet<FileVersionHistory> FileVersionHistories { get; set; }
+    public virtual DbSet<FileTrackingAlertEpisode> FileTrackingAlertEpisodes { get; set; }
+
     public virtual DbSet<FileType> FileTypes { get; set; }
 
     public virtual DbSet<ObservedFile> ObservedFiles { get; set; }
@@ -612,6 +615,23 @@ public partial class DLPSystemContext : DbContext
             entity.HasOne(d => d.Organization).WithMany(p => p.FileInventoryRecords)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_FileInventoryRecords_Organizations");
+        });
+
+        modelBuilder.Entity<FileVersionHistory>(entity =>
+        {
+            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+
+            entity.HasOne(d => d.Device).WithMany(p => p.FileVersionHistories)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileVersionHistory_Devices");
+
+            entity.HasOne(d => d.Employee).WithMany(p => p.FileVersionHistories)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileVersionHistory_Employees");
+
+            entity.HasOne(d => d.Organization).WithMany(p => p.FileVersionHistories)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileVersionHistory_Organizations");
         });
 
         modelBuilder.Entity<FileType>(entity =>
