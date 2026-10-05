@@ -148,6 +148,9 @@ builder.Services.AddHttpClient("FileClassificationApi", (services, client) =>
 });
 builder.Services.AddScoped<IFileClassificationService, FileClassificationService>();
 builder.Services.AddScoped<IFileKeyProtectionService, FileKeyProtectionService>();
+// Encrypts the extracted text kept for the File Tracking diff viewer (Phase 6); see FileVersionContent.
+builder.Services.AddSingleton<IFileVersionTextProtector, FileVersionTextProtector>();
+builder.Services.AddScoped<IFileVersionDiffService, FileVersionDiffService>();
 builder.Services.AddScoped<IEnrollmentTokenService, EnrollmentTokenService>();
 
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));

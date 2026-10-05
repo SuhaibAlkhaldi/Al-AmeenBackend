@@ -1554,6 +1554,36 @@ namespace DLPManagementSystem.Migrations
                     b.ToTable("FileTypes");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.FileVersionContent", b =>
+                {
+                    b.Property<Guid>("FileVersionHistoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CapturedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("CharCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EncryptedText")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("FileVersionHistoryId");
+
+                    b.HasIndex(new[] { "CapturedAtUtc" }, "IX_FileVersionContents_CapturedAtUtc");
+
+                    b.HasIndex(new[] { "OrganizationId", "FileId" }, "IX_FileVersionContents_Org_File");
+
+                    b.ToTable("FileVersionContents");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.FileVersionHistory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3441,6 +3471,17 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("AuditEvent");
 
                     b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileVersionContent", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.FileVersionHistory", "FileVersionHistory")
+                        .WithMany()
+                        .HasForeignKey("FileVersionHistoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FileVersionHistory");
                 });
 
             modelBuilder.Entity("DLPManagementSystem.Models.FileVersionHistory", b =>

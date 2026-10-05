@@ -5,6 +5,13 @@ namespace DLPManagementSystem.DTO.FileChainOfCustody
     // very first entry is always the "Genesis" row (Old* all null).
     public class FileVersionHistoryEntryDto
     {
+        // The history row's own Id. The diff viewer asks for a version by this Id.
+        public Guid VersionId { get; set; }
+
+        // True when this version has captured text the diff viewer can compare (see FileVersionContent).
+        // It says nothing about the caller's permission to see the text - the diff endpoint enforces that.
+        public bool CanCompare { get; set; }
+
         public DateTimeOffset ObservedAtUtc { get; set; }
 
         public string? EmployeeName { get; set; }

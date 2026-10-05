@@ -1,6 +1,7 @@
 using DLPManagementSystem.DTO.AgentFileInventory;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Service;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -85,7 +86,7 @@ namespace DLPManagementSystem.Tests.Service
             // Setup: the file already exists at oldPath, Secret - not part of the race itself.
             await using (var setupDb = CreateContext())
             {
-                var setupService = new AgentFileInventoryService(setupDb, NullLogger<AgentFileInventoryService>.Instance);
+                var setupService = new AgentFileInventoryService(setupDb, NullLogger<AgentFileInventoryService>.Instance, new FileVersionTextProtector(new EphemeralDataProtectionProvider()));
                 await setupService.ApplyFileInventoryBatchAsync(_organizationId, _deviceId, new AgentFileInventoryBatchRequestDto
                 {
                     TenantId = _organizationId,
@@ -104,7 +105,7 @@ namespace DLPManagementSystem.Tests.Service
             // Created report for newPath directly, dispatched concurrently on separate DbContexts -
             // exactly the two overlapping detection paths observed live.
             await using var dbRenamed = CreateContext();
-            var serviceRenamed = new AgentFileInventoryService(dbRenamed, NullLogger<AgentFileInventoryService>.Instance);
+            var serviceRenamed = new AgentFileInventoryService(dbRenamed, NullLogger<AgentFileInventoryService>.Instance, new FileVersionTextProtector(new EphemeralDataProtectionProvider()));
             var taskRenamed = serviceRenamed.ApplyFileInventoryBatchAsync(_organizationId, _deviceId, new AgentFileInventoryBatchRequestDto
             {
                 TenantId = _organizationId,
@@ -119,7 +120,7 @@ namespace DLPManagementSystem.Tests.Service
             });
 
             await using var dbCreated = CreateContext();
-            var serviceCreated = new AgentFileInventoryService(dbCreated, NullLogger<AgentFileInventoryService>.Instance);
+            var serviceCreated = new AgentFileInventoryService(dbCreated, NullLogger<AgentFileInventoryService>.Instance, new FileVersionTextProtector(new EphemeralDataProtectionProvider()));
             var taskCreated = serviceCreated.ApplyFileInventoryBatchAsync(_organizationId, _deviceId, new AgentFileInventoryBatchRequestDto
             {
                 TenantId = _organizationId,
@@ -149,7 +150,7 @@ namespace DLPManagementSystem.Tests.Service
             if (results[0].MessageEn == retryMessage)
             {
                 await using var retryDb = CreateContext();
-                var retryService = new AgentFileInventoryService(retryDb, NullLogger<AgentFileInventoryService>.Instance);
+                var retryService = new AgentFileInventoryService(retryDb, NullLogger<AgentFileInventoryService>.Instance, new FileVersionTextProtector(new EphemeralDataProtectionProvider()));
                 var retryResult = await retryService.ApplyFileInventoryBatchAsync(_organizationId, _deviceId, new AgentFileInventoryBatchRequestDto
                 {
                     TenantId = _organizationId, DeviceId = _deviceId, AgentVersion = "test", SyncKind = FileInventorySyncKinds.Incremental,
@@ -199,7 +200,7 @@ namespace DLPManagementSystem.Tests.Service
 
             await using (var setupDb = CreateContext())
             {
-                var setupService = new AgentFileInventoryService(setupDb, NullLogger<AgentFileInventoryService>.Instance);
+                var setupService = new AgentFileInventoryService(setupDb, NullLogger<AgentFileInventoryService>.Instance, new FileVersionTextProtector(new EphemeralDataProtectionProvider()));
                 await setupService.ApplyFileInventoryBatchAsync(_organizationId, _deviceId, new AgentFileInventoryBatchRequestDto
                 {
                     TenantId = _organizationId, DeviceId = _deviceId, AgentVersion = "test", SyncKind = FileInventorySyncKinds.Incremental,
@@ -212,7 +213,7 @@ namespace DLPManagementSystem.Tests.Service
             }
 
             await using var db = CreateContext();
-            var service = new AgentFileInventoryService(db, NullLogger<AgentFileInventoryService>.Instance);
+            var service = new AgentFileInventoryService(db, NullLogger<AgentFileInventoryService>.Instance, new FileVersionTextProtector(new EphemeralDataProtectionProvider()));
 
             // ONE batch, TWO identical Renamed changes for the same rename - the exact shape observed live.
             var duplicateRenameChange = new Func<FileInventoryChangeDto>(() => new FileInventoryChangeDto
@@ -272,7 +273,7 @@ namespace DLPManagementSystem.Tests.Service
             const string tmpPath = @"C:\Concurrency\[Secret] converging-rename-test.txt.tmp";
 
             await using var db = CreateContext();
-            var service = new AgentFileInventoryService(db, NullLogger<AgentFileInventoryService>.Instance);
+            var service = new AgentFileInventoryService(db, NullLogger<AgentFileInventoryService>.Instance, new FileVersionTextProtector(new EphemeralDataProtectionProvider()));
 
             // ONE batch: Created(bare) -> Renamed(tmp->tagged, unrelated/never-tracked old path,
             // processed FIRST) -> Renamed(bare->tagged, a real carried-over prior state, processed

@@ -81,6 +81,7 @@ public partial class DLPSystemContext : DbContext
 
     public virtual DbSet<FileVersionHistory> FileVersionHistories { get; set; }
     public virtual DbSet<FileTrackingAlertEpisode> FileTrackingAlertEpisodes { get; set; }
+    public virtual DbSet<FileVersionContent> FileVersionContents { get; set; }
 
     public virtual DbSet<FileType> FileTypes { get; set; }
 

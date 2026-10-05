@@ -1,6 +1,6 @@
-using System.Text.RegularExpressions;
 using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.FileChainOfCustody;
+using DLPManagementSystem.Helper.FileTracking;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
@@ -12,12 +12,6 @@ namespace DLPManagementSystem.Service.Service
     // supplies the "where else has this content been seen" half. The page combines both.
     public class FileVersionHistoryService : IFileVersionHistoryService
     {
-        // Mirrors FilenameClassificationTagger's tag pattern on the agent (CompanyDlp.Core): the
-        // classification tag the agent prepends to a file name is not part of the file's identity.
-        private static readonly Regex ClassificationTagPattern = new(
-            @"^\[(Public|Internal|Restricted|Secret|Very[ _]Secret)\]\s+",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
         private readonly DLPSystemContext _db;
 
         public FileVersionHistoryService(DLPSystemContext db)
@@ -41,23 +35,9 @@ namespace DLPManagementSystem.Service.Service
                     "الملف غير موجود");
             }
 
-            // One file's lineage spans every FileId that ever sat at the same device + folder + base
-            // name (the name with its classification tag stripped), because a tag change renames the
-            // file and a rename always gets a fresh FileId. Matching by base name keeps the original
-            // creation visible after the file was re-tagged.
-            var baseName = StripClassificationTag(record.FileName);
-            var folder = GetFolder(record.FilePath);
-
-            var candidates = await _db.FileInventoryRecords
-                .AsNoTracking()
-                .Where(x => x.OrganizationId == organizationId && x.DeviceId == record.DeviceId && x.FileName.Contains(baseName))
-                .Select(x => new { x.FileId, x.FileName, x.FilePath, x.FirstSeenAtUtc })
-                .ToListAsync(cancellationToken);
-
-            var lineage = candidates
-                .Where(x => string.Equals(StripClassificationTag(x.FileName), baseName, StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(GetFolder(x.FilePath), folder, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            // One file's lineage spans every FileId that ever sat at the same device, folder and base name
+            // (see FileLineage), so the original creation stays visible after the file was re-tagged.
+            var lineage = await FileLineage.ResolveAsync(_db, organizationId, record, cancellationToken);
 
             var lineageFileIds = lineage.Select(x => x.FileId).ToList();
             var earliestSeenAtUtc = lineage.Min(x => x.FirstSeenAtUtc);
@@ -69,12 +49,23 @@ namespace DLPManagementSystem.Service.Service
                 .OrderBy(x => x.ObservedAtUtc)
                 .ToListAsync(cancellationToken);
 
+            // Only whether a version has captured text is exposed here, never the text itself. The diff endpoint
+            // (FileVersionDiffController) is the one place the text is returned, and only to SuperAdmin/SecurityAdmin.
+            var versionsWithText = (await _db.FileVersionContents
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && lineageFileIds.Contains(x.FileId))
+                .Select(x => x.FileVersionHistoryId)
+                .ToListAsync(cancellationToken))
+                .ToHashSet();
+
             var entries = new List<FileVersionHistoryEntryDto>();
             FileVersionHistoryEntryDto? previous = null;
             foreach (var row in rows)
             {
                 var entry = new FileVersionHistoryEntryDto
                 {
+                    VersionId = row.Id,
+                    CanCompare = row.EventType == "Change" && row.ContentChanged && versionsWithText.Contains(row.Id),
                     ObservedAtUtc = row.ObservedAtUtc,
                     EmployeeName = row.Employee?.DisplayName,
                     OldFileHash = row.OldFileHash,
@@ -183,13 +174,5 @@ namespace DLPManagementSystem.Service.Service
             });
         }
 
-        private static string StripClassificationTag(string fileName) =>
-            ClassificationTagPattern.Replace(fileName, string.Empty, 1);
-
-        private static string GetFolder(string filePath)
-        {
-            var index = filePath.LastIndexOf('\\');
-            return index < 0 ? string.Empty : filePath[..index];
-        }
     }
 }

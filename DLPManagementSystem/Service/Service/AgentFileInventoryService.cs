@@ -25,10 +25,13 @@ namespace DLPManagementSystem.Service.Service
         private readonly DLPSystemContext _db;
         private readonly ILogger<AgentFileInventoryService> _logger;
 
-        public AgentFileInventoryService(DLPSystemContext db, ILogger<AgentFileInventoryService> logger)
+        private readonly IFileVersionTextProtector _textProtector;
+
+        public AgentFileInventoryService(DLPSystemContext db, ILogger<AgentFileInventoryService> logger, IFileVersionTextProtector textProtector)
         {
             _db = db;
             _logger = logger;
+            _textProtector = textProtector;
         }
 
         // Two batches for the same device can overlap (live 2026-10-04: a downgrade rename's batch
@@ -253,6 +256,7 @@ namespace DLPManagementSystem.Service.Service
                                 IsProtected = change.IsProtected ?? oldRecord?.IsProtected,
                                 IsSystemRewrite = change.IsSystemRewrite,
                                 ContentFingerprint = change.ContentFingerprint,
+                                ExtractedText = change.ExtractedText,
                                 OccurredAtUtc = change.OccurredAtUtc
                             };
 
@@ -512,7 +516,7 @@ namespace DLPManagementSystem.Service.Service
 
             AppendVersionHistoryIfChanged(
                 organizationId, deviceId, assignedEmployeeId, change.OccurredAtUtc, record,
-                isGenuineGenesis, change.IsSystemRewrite == true, IsContentTextChanged(priorState?.ContentFingerprint, change.ContentFingerprint, change.IsSystemRewrite == true), oldFileHash, oldClassificationTier, oldIsProtected, downgradeAlertLookups);
+                isGenuineGenesis, change.IsSystemRewrite == true, IsContentTextChanged(priorState?.ContentFingerprint, change.ContentFingerprint, change.IsSystemRewrite == true), change.ExtractedText, oldFileHash, oldClassificationTier, oldIsProtected, downgradeAlertLookups);
 
             await RecordFullCopyIfDetectedAsync(organizationId, deviceId, assignedEmployeeId, record, change.OccurredAtUtc, cancellationToken);
         }
@@ -601,6 +605,7 @@ namespace DLPManagementSystem.Service.Service
             bool isGenuineGenesis,
             bool isSystemRewrite,
             bool contentTextChanged,
+            string? extractedText,
             string? oldFileHash,
             string? oldClassificationTier,
             bool? oldIsProtected,
@@ -624,9 +629,10 @@ namespace DLPManagementSystem.Service.Service
                 return;
             }
 
+            var historyId = Guid.NewGuid();
             _db.FileVersionHistories.Add(new FileVersionHistory
             {
-                Id = Guid.NewGuid(),
+                Id = historyId,
                 FileId = record.FileId,
                 OrganizationId = organizationId,
                 ObservedAtUtc = observedAtUtc,
@@ -643,6 +649,21 @@ namespace DLPManagementSystem.Service.Service
                 DeviceId = deviceId,
                 EmployeeId = assignedEmployeeId
             });
+
+            // Only a content change has text worth diffing. A classification-only row would show an empty diff,
+            // and the text is the sensitive part, so it is stored only where a reviewer would look for it.
+            if (contentChanged && extractedText is not null)
+            {
+                _db.FileVersionContents.Add(new FileVersionContent
+                {
+                    FileVersionHistoryId = historyId,
+                    OrganizationId = organizationId,
+                    FileId = record.FileId,
+                    CapturedAtUtc = DateTimeOffset.UtcNow,
+                    CharCount = extractedText.Length,
+                    EncryptedText = _textProtector.Protect(extractedText)
+                });
+            }
 
             if (!isGenuineGenesis && classificationChanged && downgradeAlertLookups.HasValue
                 && IsClassificationDowngrade(oldClassificationTier, record.ClassificationTier))
