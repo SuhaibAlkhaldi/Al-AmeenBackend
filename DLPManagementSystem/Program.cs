@@ -151,6 +151,8 @@ builder.Services.AddScoped<IFileKeyProtectionService, FileKeyProtectionService>(
 // Encrypts the extracted text kept for the File Tracking diff viewer (Phase 6); see FileVersionContent.
 builder.Services.AddSingleton<IFileVersionTextProtector, FileVersionTextProtector>();
 builder.Services.AddScoped<IFileVersionDiffService, FileVersionDiffService>();
+// Browser send observations and their evidence levels (Phase 7). Rules live in Helper/FileTransfer.
+builder.Services.AddScoped<IFileTransferEventService, FileTransferEventService>();
 builder.Services.AddScoped<IEnrollmentTokenService, EnrollmentTokenService>();
 
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));

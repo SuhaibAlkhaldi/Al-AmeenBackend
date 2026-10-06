@@ -99,6 +99,44 @@ namespace DLPManagementSystem.Service.BackgroundServices
                 }
             }
 
+            // Browser send observations (Phase 7) expire on the same retention window. They are append-only, so they
+            // are removed in batches by ReceivedAtUtc, never edited.
+            var expiredTransferCount = 0;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var batchIds = await db.FileTransferEvents
+                    .Where(x => x.ReceivedAtUtc < cutoffUtc)
+                    .OrderBy(x => x.ReceivedAtUtc)
+                    .Take(options.BatchSize)
+                    .Select(x => x.Id)
+                    .ToListAsync(cancellationToken);
+
+                if (batchIds.Count == 0)
+                {
+                    break;
+                }
+
+                await db.FileTransferEvents
+                    .Where(x => batchIds.Contains(x.Id))
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                expiredTransferCount += batchIds.Count;
+
+                if (batchIds.Count < options.BatchSize)
+                {
+                    break;
+                }
+            }
+
+            if (expiredTransferCount > 0)
+            {
+                _logger.LogInformation(
+                    "File inventory cleanup run: removed {ExpiredTransferCount} file transfer events received before {CutoffUtc:o}.",
+                    expiredTransferCount, cutoffUtc);
+            }
+
             // Captured file text (File Tracking diff viewer) expires on the same retention window, but on its own track:
             // the text is the sensitive part, so it goes once it passes the window, while the version history it belongs
             // to is kept.
