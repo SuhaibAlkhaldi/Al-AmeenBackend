@@ -60,6 +60,22 @@ namespace DLPManagementSystem.Tests.Service
         }
 
         [Fact]
+        public async Task OutlookChannel_IsAccepted_AndUnknownChannelIsRejected()
+        {
+            var outlook = Observation();
+            outlook.Channel = "OUTLOOK";
+            var unknown = Observation(recipient: "b@example.com");
+            unknown.Channel = "SOMEWHERE";
+
+            var response = await IngestAsync(DeviceA, OrgA, outlook, unknown);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            Assert.Equal(1, response.Data.RejectedInvalid);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("OUTLOOK", stored.Channel);
+        }
+
+        [Fact]
         public async Task RecipientAddress_IsStoredNormalized()
         {
             await IngestAsync(DeviceA, OrgA, Observation(recipient: "  Consultant@Example.COM "));
