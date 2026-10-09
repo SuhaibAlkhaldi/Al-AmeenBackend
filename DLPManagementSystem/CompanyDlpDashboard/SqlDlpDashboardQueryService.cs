@@ -56,6 +56,14 @@ public sealed class SqlDlpDashboardQueryService : IDlpDashboardQueryService
         await connection.OpenAsync(cancellationToken);
 
         var totals = await GetTotalsAsync(connection, from, to, cancellationToken);
+
+        // Same length as [from, to), immediately preceding it - e.g. for a 24h window this is "the
+        // 24h before that". Reuses GetTotalsAsync verbatim (same SQL, same conditions) against a
+        // shifted window, per the ui-data-batch3 instruction - no separate query logic to keep in sync.
+        var previousDuration = to - from;
+        var previousTotals = (await GetTotalsAsync(connection, from - previousDuration, from, cancellationToken)).Totals;
+
+        var series = await GetSeriesAsync(connection, from, to, cancellationToken);
         var actionBreakdown = await GetActionBreakdownAsync(connection, from, to, cancellationToken);
         var reasonBreakdown = await GetReasonBreakdownAsync(connection, from, to, cancellationToken);
         var recentEvents = await GetRecentEventsAsync(connection, from, to, cancellationToken);
@@ -80,7 +88,9 @@ public sealed class SqlDlpDashboardQueryService : IDlpDashboardQueryService
             topRiskyUsers,
             riskByDepartment,
             highRiskUserCount,
-            endpointAgents);
+            endpointAgents,
+            previousTotals,
+            series);
     }
 
     // Blocked-event count per real tracked channel category, for the summary's from/to window.
@@ -413,6 +423,80 @@ WHERE ae.ReceivedAtUtc >= @FromUtc
             GetNullableDateTimeOffset(reader, "LastReceivedAtUtc"));
 
         return (dto, GetNullableLong(reader, "PolicyVersion"));
+    }
+
+    // Time-bucketed totals for the sparkline, aggregated entirely in SQL (GROUP BY on a
+    // DATEADD/DATEDIFF-floored bucket boundary) - never pulls one row per event into memory, only
+    // one row per bucket (at most 24 for a 6h/24h range, at most 7 for 168h/7d). Buckets with no
+    // events don't get a GROUP BY row at all, so they're zero-filled afterward from a small, bounded
+    // in-memory loop over the bucket boundaries themselves (not the events) - see the ui-data-batch3
+    // instruction's "decide where to zero-fill": doing it here means the frontend always receives a
+    // complete, contiguous series and never has to reconstruct missing buckets or guess boundaries
+    // itself. ae.ReceivedAtUtc is used because that's the column every other filter in this service
+    // (GetTotalsAsync, GetChannelBreakdownAsync, GetRecentEventsAsync) already filters on - this
+    // series must bucket the same rows those totals count.
+    private static async Task<IReadOnlyList<DlpDashboardSeriesPointDto>> GetSeriesAsync(
+        SqlConnection connection,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        // Matches the three fixed presets the frontend actually sends - see dashboard.component.ts's
+        // hours signal (6h/24h -> hourly buckets, 168h/7d -> daily buckets) - generalized to "a range
+        // over 24h gets daily buckets" so any other range still gets a sane, bounded bucket count.
+        var hourly = to - from <= TimeSpan.FromHours(24);
+        var bucketUnit = hourly ? "HOUR" : "DAY";
+
+        var sql = $@"
+SELECT
+    DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc AS datetime2)), 0) AS BucketStart,
+    COUNT_BIG(1) AS Total,
+    SUM(CASE WHEN ad.Name = N'Allow' THEN 1 ELSE 0 END) AS Allowed,
+    SUM(CASE WHEN ad.Name = N'Block' THEN 1 ELSE 0 END) AS Blocked,
+    SUM(CASE WHEN ad.Name IN (N'AuditOnly', N'Audit') THEN 1 ELSE 0 END) AS AuditOnly,
+    SUM(CASE WHEN ad.Name = N'Error' THEN 1 ELSE 0 END) AS Errors
+FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+WHERE ae.ReceivedAtUtc >= @FromUtc
+  AND ae.ReceivedAtUtc < @ToUtc
+GROUP BY DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc AS datetime2)), 0);";
+
+        var byBucket = new Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto>();
+
+        await using (var command = CreateCommand(connection, sql, from, to))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var bucketStart = new DateTimeOffset(
+                    DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("BucketStart")), DateTimeKind.Utc),
+                    TimeSpan.Zero);
+
+                byBucket[bucketStart] = new DlpDashboardSeriesPointDto(
+                    bucketStart,
+                    GetLong(reader, "Total"),
+                    GetLong(reader, "Blocked"),
+                    GetLong(reader, "Allowed"),
+                    GetLong(reader, "AuditOnly"),
+                    GetLong(reader, "Errors"));
+            }
+        }
+
+        var step = hourly ? TimeSpan.FromHours(1) : TimeSpan.FromDays(1);
+        var fromUtc = from.UtcDateTime;
+        var floorStart = hourly
+            ? new DateTime(fromUtc.Year, fromUtc.Month, fromUtc.Day, fromUtc.Hour, 0, 0, DateTimeKind.Utc)
+            : new DateTime(fromUtc.Year, fromUtc.Month, fromUtc.Day, 0, 0, 0, DateTimeKind.Utc);
+
+        var points = new List<DlpDashboardSeriesPointDto>();
+        for (var bucket = new DateTimeOffset(floorStart, TimeSpan.Zero); bucket < to; bucket += step)
+        {
+            points.Add(byBucket.TryGetValue(bucket, out var existing)
+                ? existing
+                : new DlpDashboardSeriesPointDto(bucket, 0, 0, 0, 0, 0));
+        }
+
+        return points;
     }
 
     private static async Task<IReadOnlyList<DlpActionBreakdownItemDto>> GetActionBreakdownAsync(
