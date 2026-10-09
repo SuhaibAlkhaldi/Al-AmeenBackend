@@ -11,12 +11,10 @@ namespace DLPManagementSystem.Tests.Service
     // DeviceUserAssignmentConcurrencyTests/PolicyVersionServiceConcurrencyTests for using the real
     // local dev SQL Server database instead.
     //
-    // dbo.AuditEvents/GetTotalsAsync/GetSeriesAsync are NOT scoped by OrganizationId (a pre-existing
-    // gap, not something this batch introduces or fixes - see the ui-data-batch3 report) - every event
-    // in the table within a query's [from, to) window counts, regardless of which organization's test
-    // fixture inserted it. To stay isolated from any other data in this shared dev database (past,
-    // future, or another test's rows), every test here anchors its window to a far-future, test-unique
-    // date far outside any range a real event could ever carry.
+    // All of the service's dashboard queries (the batched TotalsSql etc., plus the previous-period totals
+    // and the series) are scoped by OrganizationId. Each test still anchors its window to a far-future,
+    // test-unique date, so it also stays isolated from any other data in this shared dev database (past,
+    // future, or another test's rows), regardless of organization.
     public sealed class SqlDlpDashboardQueryServiceTests : IAsyncLifetime
     {
         private const string ConnectionString =
