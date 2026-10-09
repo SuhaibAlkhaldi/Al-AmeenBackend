@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+using System.Reflection;
 using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.Employees;
 using DLPManagementSystem.Models;
@@ -193,6 +195,78 @@ namespace DLPManagementSystem.Tests.Service
             Assert.True(list.Success);
             var item = Assert.Single(list.Data!.Items, x => x.Id == created.Data!.Id);
             Assert.Equal(lastLogin, item.LastLoginAtUtc);
+        }
+
+        // Covers the ui-data-batch2 addition: Employee.JobTitle (nvarchar(100) NULL) - a 100-char max
+        // length enforced via [StringLength(100)] everywhere the field is writable or stored, and
+        // normalization (trim, empty/whitespace-only -> null) applied by EmployeeService itself
+        // (the DataAnnotation only caps length; it doesn't normalize).
+        [Theory]
+        [InlineData(typeof(Employee))]
+        [InlineData(typeof(CreateEmployeeDto))]
+        [InlineData(typeof(UpdateEmployeeDto))]
+        public void JobTitle_HasA100CharacterMaxLength(Type type)
+        {
+            var property = type.GetProperty(nameof(Employee.JobTitle));
+            Assert.NotNull(property);
+
+            var attribute = property!.GetCustomAttribute<StringLengthAttribute>();
+            Assert.NotNull(attribute);
+            Assert.Equal(100, attribute!.MaximumLength);
+        }
+
+        [Fact]
+        public async Task CreateEmployeeAsync_TrimsJobTitleWhitespace()
+        {
+            var (db, service) = CreateService();
+            var device = TestDbContextFactory.AddDevice(db);
+            var request = ValidRequest(device.Id);
+            request.JobTitle = "  Security Analyst  ";
+
+            var result = await service.CreateEmployeeAsync(TestDbContextFactory.OrganizationId, Guid.NewGuid(), request);
+
+            Assert.True(result.Success);
+            Assert.Equal("Security Analyst", result.Data!.JobTitle);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public async Task CreateEmployeeAsync_NormalizesEmptyOrWhitespaceJobTitleToNull(string? jobTitle)
+        {
+            var (db, service) = CreateService();
+            var device = TestDbContextFactory.AddDevice(db);
+            var request = ValidRequest(device.Id);
+            request.JobTitle = jobTitle;
+
+            var result = await service.CreateEmployeeAsync(TestDbContextFactory.OrganizationId, Guid.NewGuid(), request);
+
+            Assert.True(result.Success);
+            Assert.Null(result.Data!.JobTitle);
+        }
+
+        [Fact]
+        public async Task UpdateEmployeeAsync_TrimsJobTitleWhitespace()
+        {
+            var (db, service) = CreateService();
+            var device = TestDbContextFactory.AddDevice(db);
+            var created = await service.CreateEmployeeAsync(TestDbContextFactory.OrganizationId, Guid.NewGuid(), ValidRequest(device.Id));
+            Assert.True(created.Success);
+
+            var update = new UpdateEmployeeDto
+            {
+                EmployeeNumber = created.Data!.EmployeeNumber,
+                DisplayName = created.Data.DisplayName,
+                Email = created.Data.Email,
+                StatusId = created.Data.StatusId,
+                JobTitle = "  Senior Security Analyst  "
+            };
+
+            var result = await service.UpdateEmployeeAsync(TestDbContextFactory.OrganizationId, created.Data.Id, Guid.NewGuid(), update);
+
+            Assert.True(result.Success);
+            Assert.Equal("Senior Security Analyst", result.Data!.JobTitle);
         }
     }
 }

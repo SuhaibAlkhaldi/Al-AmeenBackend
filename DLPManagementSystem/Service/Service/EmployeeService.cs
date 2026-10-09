@@ -71,6 +71,7 @@ namespace DLPManagementSystem.Service.Service
                     DisplayName = x.DisplayName,
                     Email = x.Email,
                     PhoneNumber = x.PhoneNumber,
+                    JobTitle = x.JobTitle,
                     StatusId = x.StatusId,
                     StatusName = x.Status.DisplayName,
                     CreatedAtUtc = x.CreatedAtUtc,
@@ -105,6 +106,7 @@ namespace DLPManagementSystem.Service.Service
                     DisplayName = x.DisplayName,
                     Email = x.Email,
                     PhoneNumber = x.PhoneNumber,
+                    JobTitle = x.JobTitle,
                     StatusId = x.StatusId,
                     StatusName = x.Status.DisplayName,
                     CreatedAtUtc = x.CreatedAtUtc,
@@ -245,6 +247,7 @@ namespace DLPManagementSystem.Service.Service
                 DisplayName = request.DisplayName,
                 Email = request.Email,
                 PhoneNumber = request.PhoneNumber,
+                JobTitle = string.IsNullOrWhiteSpace(request.JobTitle) ? null : request.JobTitle.Trim(),
                 StatusId = activeEmployeeStatus.Id,
                 CreatedAtUtc = nowUtc
             };
@@ -329,6 +332,7 @@ namespace DLPManagementSystem.Service.Service
             employee.DisplayName = request.DisplayName;
             employee.Email = request.Email;
             employee.PhoneNumber = request.PhoneNumber;
+            employee.JobTitle = string.IsNullOrWhiteSpace(request.JobTitle) ? null : request.JobTitle.Trim();
             employee.StatusId = request.StatusId;
             employee.UpdatedAtUtc = DateTimeOffset.UtcNow;
 

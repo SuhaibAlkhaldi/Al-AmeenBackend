@@ -33,6 +33,9 @@ public partial class Employee
     [StringLength(50)]
     public string? PhoneNumber { get; set; }
 
+    [StringLength(100)]
+    public string? JobTitle { get; set; }
+
     public int StatusId { get; set; }
 
     public DateTimeOffset CreatedAtUtc { get; set; }

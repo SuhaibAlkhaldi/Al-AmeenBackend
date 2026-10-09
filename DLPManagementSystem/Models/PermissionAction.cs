@@ -30,6 +30,13 @@ public partial class PermissionAction
 
     public int SortOrder { get; set; }
 
+    // Flags an action whose grant deserves extra attention in review UIs (e.g. file.decrypt,
+    // file.print) - purely informational, does not affect PermissionEvaluator / grant enforcement
+    // in any way. Backfilled for the known-sensitive keys by this column's own migration
+    // (AddIsSensitiveToPermissionActions) rather than left to DatabaseSeeder, which only inserts
+    // missing rows and never overwrites an existing one's columns - see AddPermissionActionIfMissing.
+    public bool IsSensitive { get; set; }
+
     [InverseProperty("ActionKeyNavigation")]
     public virtual ICollection<AuditEvent> AuditEvents { get; set; } = new List<AuditEvent>();
 

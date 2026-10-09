@@ -15,5 +15,7 @@
         public bool SupportsTemporaryGrant { get; set; }
 
         public int SortOrder { get; set; }
+
+        public bool IsSensitive { get; set; }
     }
 }
