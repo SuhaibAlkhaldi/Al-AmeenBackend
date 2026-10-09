@@ -86,6 +86,12 @@ namespace DLPManagementSystem.Service.Service
                     AlertStatusId = x.AlertStatusId,
                     AlertStatusName = x.AlertStatus.Name,
                     DeviceName = x.AuditEvent.Device.MachineName,
+                    // ActionKeyNavigation/Category are both non-nullable FKs (every AuditEvent has
+                    // an ActionKey, every PermissionAction has a CategoryId) - same confidence level
+                    // as DeviceName above - but mapped null-safely anyway since this crosses two
+                    // extra joins the rest of this DTO doesn't, and a mismatched/deleted lookup row
+                    // should degrade the UI gracefully rather than 500.
+                    Category = x.AuditEvent.ActionKeyNavigation == null ? null : x.AuditEvent.ActionKeyNavigation.Category == null ? null : x.AuditEvent.ActionKeyNavigation.Category.DisplayName,
                     EmployeeName = x.AuditEvent.Employee != null ? x.AuditEvent.Employee.DisplayName : null,
                     AssignedToUserId = x.AssignedToUserId,
                     AssignedToUserName = x.AssignedToUser != null ? x.AssignedToUser.FullName : null,
@@ -115,6 +121,7 @@ namespace DLPManagementSystem.Service.Service
                 .Include(x => x.AssignedToUser)
                 .Include(x => x.AuditEvent).ThenInclude(x => x.Device)
                 .Include(x => x.AuditEvent).ThenInclude(x => x.Employee)
+                .Include(x => x.AuditEvent).ThenInclude(x => x.ActionKeyNavigation).ThenInclude(x => x.Category)
                 .Include(x => x.AuditEvent).ThenInclude(x => x.AiAnalysisResults).ThenInclude(x => x.Decision)
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
@@ -135,6 +142,7 @@ namespace DLPManagementSystem.Service.Service
                 AlertLevelName = alert.AlertLevel.Name,
                 AlertStatusId = alert.AlertStatusId,
                 AlertStatusName = alert.AlertStatus.Name,
+                Category = alert.AuditEvent.ActionKeyNavigation?.Category?.DisplayName,
                 AssignedToUserId = alert.AssignedToUserId,
                 AssignedToUserName = alert.AssignedToUser?.FullName,
                 CreatedAtUtc = alert.CreatedAtUtc,
@@ -164,6 +172,7 @@ namespace DLPManagementSystem.Service.Service
                 .Include(x => x.AlertStatus)
                 .Include(x => x.AuditEvent).ThenInclude(x => x.Device)
                 .Include(x => x.AuditEvent).ThenInclude(x => x.Employee)
+                .Include(x => x.AuditEvent).ThenInclude(x => x.ActionKeyNavigation).ThenInclude(x => x.Category)
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
             if (alert == null)
@@ -192,6 +201,7 @@ namespace DLPManagementSystem.Service.Service
                 .Include(x => x.AssignedToUser)
                 .Include(x => x.AuditEvent).ThenInclude(x => x.Device)
                 .Include(x => x.AuditEvent).ThenInclude(x => x.Employee)
+                .Include(x => x.AuditEvent).ThenInclude(x => x.ActionKeyNavigation).ThenInclude(x => x.Category)
                 .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == id, cancellationToken);
 
             if (alert == null)
@@ -314,6 +324,7 @@ namespace DLPManagementSystem.Service.Service
                 AlertStatusId = alert.AlertStatusId,
                 AlertStatusName = alert.AlertStatus?.Name ?? string.Empty,
                 DeviceName = alert.AuditEvent.Device.MachineName,
+                Category = alert.AuditEvent.ActionKeyNavigation?.Category?.DisplayName,
                 EmployeeName = alert.AuditEvent.Employee?.DisplayName,
                 AssignedToUserId = alert.AssignedToUserId,
                 AssignedToUserName = assignedToUserName,

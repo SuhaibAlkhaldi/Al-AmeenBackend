@@ -135,5 +135,64 @@ namespace DLPManagementSystem.Tests.Service
 
             Assert.NotEqual(first.Data!.GeneratedPassword, second.Data!.GeneratedPassword);
         }
+
+        // Covers the ui-data-batch1 addition: EmployeeListItemDto/EmployeeDetailDto.LastLoginAtUtc,
+        // sourced from the linked User.LastLoginAtUtc (set by AuthService on every successful
+        // login) - same join EmployeeService already does for RoleName.
+        [Fact]
+        public async Task GetEmployeeByIdAsync_ReflectsTheLinkedUsersLastLoginAtUtc()
+        {
+            var (db, service) = CreateService();
+            var device = TestDbContextFactory.AddDevice(db);
+
+            var created = await service.CreateEmployeeAsync(TestDbContextFactory.OrganizationId, Guid.NewGuid(), ValidRequest(device.Id));
+            Assert.True(created.Success);
+
+            var lastLogin = DateTimeOffset.UtcNow.AddHours(-2);
+            var user = await db.Users.SingleAsync(x => x.Id == created.Data!.UserId);
+            user.LastLoginAtUtc = lastLogin;
+            await db.SaveChangesAsync();
+
+            var detail = await service.GetEmployeeByIdAsync(TestDbContextFactory.OrganizationId, created.Data!.Id);
+
+            Assert.True(detail.Success);
+            Assert.Equal(lastLogin, detail.Data!.LastLoginAtUtc);
+        }
+
+        [Fact]
+        public async Task GetEmployeeByIdAsync_NeverSignedIn_LastLoginAtUtcIsNull()
+        {
+            var (db, service) = CreateService();
+            var device = TestDbContextFactory.AddDevice(db);
+
+            var created = await service.CreateEmployeeAsync(TestDbContextFactory.OrganizationId, Guid.NewGuid(), ValidRequest(device.Id));
+            Assert.True(created.Success);
+
+            var detail = await service.GetEmployeeByIdAsync(TestDbContextFactory.OrganizationId, created.Data!.Id);
+
+            Assert.True(detail.Success);
+            Assert.Null(detail.Data!.LastLoginAtUtc);
+        }
+
+        [Fact]
+        public async Task GetEmployeesAsync_ListAlsoReflectsLastLoginAtUtc()
+        {
+            var (db, service) = CreateService();
+            var device = TestDbContextFactory.AddDevice(db);
+
+            var created = await service.CreateEmployeeAsync(TestDbContextFactory.OrganizationId, Guid.NewGuid(), ValidRequest(device.Id));
+            Assert.True(created.Success);
+
+            var lastLogin = DateTimeOffset.UtcNow.AddMinutes(-15);
+            var user = await db.Users.SingleAsync(x => x.Id == created.Data!.UserId);
+            user.LastLoginAtUtc = lastLogin;
+            await db.SaveChangesAsync();
+
+            var list = await service.GetEmployeesAsync(TestDbContextFactory.OrganizationId, search: null, departmentId: null, statusId: null, page: 1, pageSize: 20);
+
+            Assert.True(list.Success);
+            var item = Assert.Single(list.Data!.Items, x => x.Id == created.Data!.Id);
+            Assert.Equal(lastLogin, item.LastLoginAtUtc);
+        }
     }
 }

@@ -30,5 +30,12 @@ namespace DLPManagementSystem.DTO.Employees
         public string StatusName { get; set; } = string.Empty;
 
         public DateTimeOffset CreatedAtUtc { get; set; }
+
+        // The linked login account's last successful sign-in (see User.LastLoginAtUtc, set by
+        // AuthService on every successful login) - exposed here for the same reason RoleName is:
+        // this endpoint is already admin-only (EmployeesController's class-level [Authorize] -
+        // SuperAdmin/SecurityAdmin/HelpDesk/Auditor), so this adds no new exposure beyond what an
+        // admin viewing this employee can already see (name, email, role).
+        public DateTimeOffset? LastLoginAtUtc { get; set; }
     }
 }

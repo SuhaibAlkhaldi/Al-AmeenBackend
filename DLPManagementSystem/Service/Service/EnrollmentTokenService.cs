@@ -21,6 +21,7 @@ namespace DLPManagementSystem.Service.Service
 
         public async Task<ApiResponse<PagedResultDto<EnrollmentTokenDto>>> GetTokensAsync(
             Guid organizationId,
+            string? status,
             int page,
             int pageSize,
             CancellationToken cancellationToken = default)
@@ -28,6 +29,14 @@ namespace DLPManagementSystem.Service.Service
             var query = _db.AgentEnrollmentTokens
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId);
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                // Same Active/Exhausted/Expired/Revoked classification EnrollmentTokensListComponent.
+                // status() computes client-side, translated to SQL - see AgentEnrollmentTokenRuntimeStatus.
+                var nowUtc = DateTimeOffset.UtcNow;
+                query = query.Where(AgentEnrollmentTokenRuntimeStatus.MatchesStatus(status, nowUtc));
+            }
 
             var totalCount = await query.CountAsync(cancellationToken);
 

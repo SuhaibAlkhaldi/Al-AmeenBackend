@@ -7,6 +7,7 @@ namespace DLPManagementSystem.Service.Interface
     {
         Task<ApiResponse<PagedResultDto<EnrollmentTokenDto>>> GetTokensAsync(
             Guid organizationId,
+            string? status,
             int page,
             int pageSize,
             CancellationToken cancellationToken = default);

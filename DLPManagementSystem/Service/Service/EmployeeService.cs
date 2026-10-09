@@ -73,7 +73,8 @@ namespace DLPManagementSystem.Service.Service
                     PhoneNumber = x.PhoneNumber,
                     StatusId = x.StatusId,
                     StatusName = x.Status.DisplayName,
-                    CreatedAtUtc = x.CreatedAtUtc
+                    CreatedAtUtc = x.CreatedAtUtc,
+                    LastLoginAtUtc = x.User.LastLoginAtUtc
                 })
                 .ToListAsync(cancellationToken);
 
@@ -107,7 +108,8 @@ namespace DLPManagementSystem.Service.Service
                     StatusId = x.StatusId,
                     StatusName = x.Status.DisplayName,
                     CreatedAtUtc = x.CreatedAtUtc,
-                    UpdatedAtUtc = x.UpdatedAtUtc
+                    UpdatedAtUtc = x.UpdatedAtUtc,
+                    LastLoginAtUtc = x.User.LastLoginAtUtc
                 })
                 .FirstOrDefaultAsync(cancellationToken);
 
