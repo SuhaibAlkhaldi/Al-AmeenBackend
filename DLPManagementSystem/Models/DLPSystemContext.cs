@@ -321,6 +321,19 @@ public partial class DLPSystemContext : DbContext
             entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
             entity.Property(e => e.ReceivedAtUtc).HasDefaultValueSql("(sysutcdatetime())");
 
+            // Added 2026-10-08, Phase 1 of the dashboard-slowness fix (see sharded-enchanting-chipmunk.md
+            // plan and its Baseline section). Confirmed live via SET STATISTICS XML that
+            // SqlDlpDashboardQueryService.GetRecentEventsAsync (TOP(5) ... ORDER BY ReceivedAtUtc DESC,
+            // OccurredAtUtc DESC with no supporting index) was the dominant RESOURCE_SEMAPHORE cause:
+            // it forced a full Clustered Index Scan + Sort whose memory-grant estimate badly overshot
+            // actual use (7,248 KB requested vs 304 KB used), causing a ~39s grant wait in isolation, no
+            // concurrency needed. The leading/descending column order here matches that query's WHERE
+            // (OrganizationId equality, ReceivedAtUtc range) and ORDER BY exactly, so the engine can
+            // satisfy both via a single ordered index seek with no Sort operator at all.
+            entity.HasIndex(e => new { e.OrganizationId, e.ReceivedAtUtc, e.OccurredAtUtc })
+                .IsDescending(false, true, true)
+                .HasDatabaseName("IX_AuditEvents_Org_ReceivedAtUtc_OccurredAtUtc");
+
             entity.HasOne(d => d.ActionKeyNavigation).WithMany(p => p.AuditEvents)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_AuditEvents_Actions");

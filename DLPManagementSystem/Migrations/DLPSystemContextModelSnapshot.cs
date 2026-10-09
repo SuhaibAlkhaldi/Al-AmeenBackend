@@ -633,6 +633,10 @@ namespace DLPManagementSystem.Migrations
 
                     b.HasIndex("ReasonCodeId");
 
+                    b.HasIndex("OrganizationId", "ReceivedAtUtc", "OccurredAtUtc")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("IX_AuditEvents_Org_ReceivedAtUtc_OccurredAtUtc");
+
                     b.HasIndex(new[] { "ActionKey", "OccurredAtUtc" }, "IX_AuditEvents_Action_Occurred")
                         .IsDescending(false, true);
 
