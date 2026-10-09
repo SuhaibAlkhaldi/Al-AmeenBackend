@@ -75,6 +75,19 @@ namespace DLPManagementSystem.DTO.AgentFileInventory
 
         public bool? IsProtected { get; set; }
 
+        // True when the agent itself just rewrote this content (its own classification watermark), not
+        // a user edit - see the agent's SelfWrittenContentRegistry. Such a change never records a history
+        // row by itself; only a real classification or protection change does.
+        public bool? IsSystemRewrite { get; set; }
+
+        // See FileInventoryRecord.ContentFingerprint. Null when the agent cannot read this file's format.
+        public string? ContentFingerprint { get; set; }
+
+        // The file's extracted text, sent only for the sensitive tiers (Restricted, Secret, Very Secret) and
+        // only when it fits the agent's capture limit. Stored encrypted for the diff viewer (see
+        // FileVersionContent) and never written to logs. Null means the version has no text to compare.
+        public string? ExtractedText { get; set; }
+
         public DateTimeOffset OccurredAtUtc { get; set; }
     }
 }

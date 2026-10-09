@@ -633,6 +633,10 @@ namespace DLPManagementSystem.Migrations
 
                     b.HasIndex("ReasonCodeId");
 
+                    b.HasIndex("OrganizationId", "ReceivedAtUtc", "OccurredAtUtc")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("IX_AuditEvents_Org_ReceivedAtUtc_OccurredAtUtc");
+
                     b.HasIndex(new[] { "ActionKey", "OccurredAtUtc" }, "IX_AuditEvents_Action_Occurred")
                         .IsDescending(false, true);
 
@@ -1399,6 +1403,10 @@ namespace DLPManagementSystem.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("ContentFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTimeOffset?>("DeletedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1478,6 +1486,173 @@ namespace DLPManagementSystem.Migrations
                     b.ToTable("FileInventoryRecords");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.FileTrackingAlertEpisode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AuditEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DistinctDeviceCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DistinctEmployeeCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("EpisodeAnchorAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("EpisodeLastObservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RuleType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuditEventId");
+
+                    b.HasIndex(new[] { "OrganizationId", "ContentFingerprint", "RuleType", "EpisodeLastObservedAtUtc" }, "IX_FileTrackingAlertEpisodes_Open");
+
+                    b.HasIndex(new[] { "OrganizationId", "ContentFingerprint", "RuleType", "EpisodeAnchorAtUtc" }, "UX_FileTrackingAlertEpisodes_Burst")
+                        .IsUnique();
+
+                    b.ToTable("FileTrackingAlertEpisodes");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileTransferEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ClassificationTierAtEvent")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ContentFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("CorrelationRuleVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ExtensionVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("FileEvidenceLevel")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<string>("FileEvidenceType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("FileHashBytes")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("FileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<long>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("ObservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OverallEvidenceLevel")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<DateTimeOffset>("ReceivedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecipientEvidenceLevel")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<string>("RecipientEvidenceType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("RecipientKind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("RecipientOrdinal")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RecipientRole")
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)");
+
+                    b.Property<string>("RecipientValue")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<Guid>("SendActionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceDeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SourceEmployeeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceDeviceId");
+
+                    b.HasIndex(new[] { "OrganizationId", "FileId" }, "IX_FileTransferEvents_Org_File");
+
+                    b.HasIndex(new[] { "OrganizationId", "ObservedAtUtc" }, "IX_FileTransferEvents_Org_Observed");
+
+                    b.HasIndex(new[] { "OrganizationId", "ReceivedAtUtc" }, "IX_FileTransferEvents_Org_Received");
+
+                    b.HasIndex(new[] { "OrganizationId", "SendActionId", "RecipientOrdinal" }, "UX_FileTransferEvents_Send_Recipient")
+                        .IsUnique();
+
+                    b.ToTable("FileTransferEvents");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.FileType", b =>
                 {
                     b.Property<int>("Id")
@@ -1503,6 +1678,118 @@ namespace DLPManagementSystem.Migrations
                         .IsUnique();
 
                     b.ToTable("FileTypes");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileVersionContent", b =>
+                {
+                    b.Property<Guid>("FileVersionHistoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CapturedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("CharCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EncryptedText")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("FileVersionHistoryId");
+
+                    b.HasIndex(new[] { "CapturedAtUtc" }, "IX_FileVersionContents_CapturedAtUtc");
+
+                    b.HasIndex(new[] { "OrganizationId", "FileId" }, "IX_FileVersionContents_Org_File");
+
+                    b.ToTable("FileVersionContents");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileVersionHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newsequentialid())");
+
+                    b.Property<bool>("ClassificationChanged")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ContentChanged")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("EmployeeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("NewClassificationTier")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("NewContentFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("NewFileHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("NewIsProtected")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("ObservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("OldClassificationTier")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("OldFileHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool?>("OldIsProtected")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("ProtectionChanged")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("SourceFileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex(new[] { "FileId", "ObservedAtUtc" }, "IX_FileVersionHistory_File_Observed");
+
+                    b.HasIndex(new[] { "NewFileHash", "ObservedAtUtc" }, "IX_FileVersionHistory_NewHash_Observed");
+
+                    b.ToTable("FileVersionHistories");
                 });
 
             modelBuilder.Entity("DLPManagementSystem.Models.ObservedFile", b =>
@@ -3296,6 +3583,81 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.FileTrackingAlertEpisode", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.AuditEvent", "AuditEvent")
+                        .WithMany()
+                        .HasForeignKey("AuditEventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DLPManagementSystem.Models.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AuditEvent");
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileTransferEvent", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DLPManagementSystem.Models.Device", "SourceDevice")
+                        .WithMany()
+                        .HasForeignKey("SourceDeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("SourceDevice");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileVersionContent", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.FileVersionHistory", "FileVersionHistory")
+                        .WithMany()
+                        .HasForeignKey("FileVersionHistoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FileVersionHistory");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.FileVersionHistory", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.Device", "Device")
+                        .WithMany("FileVersionHistories")
+                        .HasForeignKey("DeviceId")
+                        .IsRequired()
+                        .HasConstraintName("FK_FileVersionHistory_Devices");
+
+                    b.HasOne("DLPManagementSystem.Models.Employee", "Employee")
+                        .WithMany("FileVersionHistories")
+                        .HasForeignKey("EmployeeId")
+                        .HasConstraintName("FK_FileVersionHistory_Employees");
+
+                    b.HasOne("DLPManagementSystem.Models.Organization", "Organization")
+                        .WithMany("FileVersionHistories")
+                        .HasForeignKey("OrganizationId")
+                        .IsRequired()
+                        .HasConstraintName("FK_FileVersionHistory_Organizations");
+
+                    b.Navigation("Device");
+
+                    b.Navigation("Employee");
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.ObservedFile", b =>
                 {
                     b.HasOne("DLPManagementSystem.Models.Device", "Device")
@@ -3869,6 +4231,8 @@ namespace DLPManagementSystem.Migrations
 
                     b.Navigation("FileInventoryRecords");
 
+                    b.Navigation("FileVersionHistories");
+
                     b.Navigation("ObservedFiles");
 
                     b.Navigation("PermissionGrants");
@@ -3901,6 +4265,8 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("EmployeeWindowsIdentities");
 
                     b.Navigation("FileInventoryRecords");
+
+                    b.Navigation("FileVersionHistories");
 
                     b.Navigation("PermissionRequests");
                 });
@@ -3957,6 +4323,8 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("Employees");
 
                     b.Navigation("FileInventoryRecords");
+
+                    b.Navigation("FileVersionHistories");
 
                     b.Navigation("ObservedFiles");
 

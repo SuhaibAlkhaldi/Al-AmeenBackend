@@ -6,6 +6,7 @@ using DLPManagementSystem.Helper.Health;
 using DLPManagementSystem.Helper.Retention;
 using DLPManagementSystem.Helper.FileInventory;
 using DLPManagementSystem.Helper.DeviceMonitoring;
+using DLPManagementSystem.Helper.FileTracking;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.BackgroundServices;
 using DLPManagementSystem.Service.Interface;
@@ -110,6 +111,8 @@ builder.Services.AddScoped<IDatabaseSeeder, DatabaseSeeder>();
 builder.Services.AddScoped<IAgentAuditEventService, AgentAuditEventService>();
 builder.Services.AddScoped<IAgentFileInventoryService, AgentFileInventoryService>();
 builder.Services.AddScoped<IFileInventoryReportService, FileInventoryReportService>();
+builder.Services.AddScoped<IFileChainOfCustodyService, FileChainOfCustodyService>();
+builder.Services.AddScoped<IFileVersionHistoryService, FileVersionHistoryService>();
 builder.Services.AddScoped<IAgentEnrollmentService, AgentEnrollmentService>();
 builder.Services.AddScoped<IAgentHeartbeatService, AgentHeartbeatService>();
 builder.Services.AddScoped<IAgentPolicyService, AgentPolicyService>();
@@ -145,6 +148,11 @@ builder.Services.AddHttpClient("FileClassificationApi", (services, client) =>
 });
 builder.Services.AddScoped<IFileClassificationService, FileClassificationService>();
 builder.Services.AddScoped<IFileKeyProtectionService, FileKeyProtectionService>();
+// Encrypts the extracted text kept for the File Tracking diff viewer (Phase 6); see FileVersionContent.
+builder.Services.AddSingleton<IFileVersionTextProtector, FileVersionTextProtector>();
+builder.Services.AddScoped<IFileVersionDiffService, FileVersionDiffService>();
+// Browser send observations and their evidence levels (Phase 7). Rules live in Helper/FileTransfer.
+builder.Services.AddScoped<IFileTransferEventService, FileTransferEventService>();
 builder.Services.AddScoped<IEnrollmentTokenService, EnrollmentTokenService>();
 
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
@@ -162,6 +170,8 @@ builder.Services.AddHostedService<PermissionGrantTransitionWorker>();
 
 builder.Services.Configure<DeviceStaleDetectionOptions>(builder.Configuration.GetSection("DeviceStaleDetection"));
 builder.Services.AddHostedService<DeviceStaleDetectionWorker>();
+builder.Services.Configure<RapidFilePropagationOptions>(builder.Configuration.GetSection("RapidFilePropagation"));
+builder.Services.AddHostedService<RapidFilePropagationWorker>();
 
 // Explicit persistence + a stable application name: without these, ASP.NET Core's default Data
 // Protection keyring can differ across redeploys or across instances, silently breaking every

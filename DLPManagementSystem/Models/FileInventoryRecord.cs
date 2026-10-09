@@ -10,11 +10,12 @@ namespace DLPManagementSystem.Models;
 // feature). One row per (DeviceId, FilePath) currently believed to exist on disk - NOT an
 // append-only event log like AuditEvent. FileId is an independent database identity; it does not
 // carry any meaning about a file's identity persisting across a rename/move (see the unique index
-// below and AgentFileInventoryService's rename handling: a rename always soft-deletes the old row
-// and inserts a brand-new row/FileId, by deliberate 2026 product decision - tracking "this is still
-// the same file" across a rename is out of scope for v1 and left to a possible future Provenance
-// lineage feature). FileHash is a content fingerprint used only to look up a known classification -
-// it is not part of this table's identity either.
+// below and AgentFileInventoryService's rename handling: a rename's OLD path's FileId is never
+// reused for the NEW path - a fresh FileId is generated unless an active row already exists for the
+// new path, e.g. from an earlier change in the same batch - by deliberate 2026 product decision;
+// tracking "this is still the same file" across a rename is out of scope for v1 and left to a
+// possible future Provenance lineage feature). FileHash is a content fingerprint used only to look
+// up a known classification - it is not part of this table's identity either.
 [Index("DeviceId", "IsDeleted", Name = "IX_FileInventoryRecords_Device_Active")]
 [Index("OrganizationId", "ClassificationTier", Name = "IX_FileInventoryRecords_Org_Classification")]
 public partial class FileInventoryRecord
@@ -38,6 +39,12 @@ public partial class FileInventoryRecord
     // a known classification forward for files whose content hasn't changed.
     [StringLength(128)]
     public string? FileHash { get; set; }
+
+    // Fingerprint of the file's own content with its classification watermark removed (see the agent's
+    // ContentFingerprinter). Two copies with the same text share it even though their file hashes differ,
+    // since each device stamps its own header. Null for formats the agent does not read yet.
+    [StringLength(64)]
+    public string? ContentFingerprint { get; set; }
 
     public int? FileTypeId { get; set; }
 

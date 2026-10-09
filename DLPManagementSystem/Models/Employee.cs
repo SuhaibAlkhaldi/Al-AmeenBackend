@@ -58,6 +58,9 @@ public partial class Employee
     [InverseProperty("Employee")]
     public virtual ICollection<FileInventoryRecord> FileInventoryRecords { get; set; } = new List<FileInventoryRecord>();
 
+    [InverseProperty("Employee")]
+    public virtual ICollection<FileVersionHistory> FileVersionHistories { get; set; } = new List<FileVersionHistory>();
+
     [ForeignKey("OrganizationId")]
     [InverseProperty("Employees")]
     public virtual Organization Organization { get; set; } = null!;

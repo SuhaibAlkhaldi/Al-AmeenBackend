@@ -284,6 +284,11 @@ namespace DLPManagementSystem.Data.Seed
 
             await AddPermissionActionIfMissing(PermissionActionKeys.AgentSession, "System", "Agent Session", "Housekeeping events emitted by the agent's own session lifecycle.", "Allow", 160, ct);
 
+            // Phase 4/5 of the "File Tracking" plan - see PermissionActionKeys.FileInventoryMonitor's
+            // comment for why this shares AgentSession's "System"/Allow shape (not a real grantable
+            // Allow/Deny action, shouldn't appear in the admin's permission-management UI).
+            await AddPermissionActionIfMissing(PermissionActionKeys.FileInventoryMonitor, "System", "File Inventory Monitor", "Backend-detected file-tracking signals (classification downgrades, rapid propagation) - not reported by any agent.", "Allow", 165, ct);
+
             // Deny by default like every other channel above: most rank-and-file employees at this
             // product's real customer base (government, banks, hospitals, telecom) don't need a
             // terminal at all, only IT staff do. Admins grant CLI access to the employees/teams who
@@ -459,6 +464,17 @@ namespace DLPManagementSystem.Data.Seed
             // for the full detection logic.
             await AddAuditEventTypeIfMissing(16, "DeviceStale", "Device Stale", ct);
             await AddAuditEventTypeIfMissing(17, "DeviceStaleAfterPolicyChange", "Device Stale After Policy Change", ct);
+
+            // Phase 4/5 of the "File Tracking" plan - raised by the backend itself watching
+            // FileVersionHistory (not reported by any agent), same "synthetic AuditEvent" pattern as
+            // DeviceStale above. FileClassificationDowngraded fires immediately, inside
+            // AgentFileInventoryService's own transaction, the moment a file's classification tier is
+            // observed to drop (e.g. Secret -> Public) - never for a rise in sensitivity. RapidFilePropagation
+            // fires from its own periodic background worker when the same content (same SHA-256) is
+            // observed across enough distinct employees within a configurable time window - purely
+            // descriptive (facts only: who/when/detection method), never implying a proven transfer.
+            await AddAuditEventTypeIfMissing(18, "FileClassificationDowngraded", "File Classification Downgraded", ct);
+            await AddAuditEventTypeIfMissing(19, "RapidFilePropagation", "Rapid File Propagation", ct);
 
             await AddAuditReasonCodeIfMissing(1, "DefaultAllow", "Default Allow", "Action was allowed by default policy.", ct);
             await AddAuditReasonCodeIfMissing(2, "GlobalDefaultDeny", "Global Default Deny", "Action was blocked by default deny policy.", ct);

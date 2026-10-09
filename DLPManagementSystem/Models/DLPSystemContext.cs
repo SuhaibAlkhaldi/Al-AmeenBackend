@@ -79,6 +79,11 @@ public partial class DLPSystemContext : DbContext
 
     public virtual DbSet<FileInventoryRecord> FileInventoryRecords { get; set; }
 
+    public virtual DbSet<FileVersionHistory> FileVersionHistories { get; set; }
+    public virtual DbSet<FileTrackingAlertEpisode> FileTrackingAlertEpisodes { get; set; }
+    public virtual DbSet<FileVersionContent> FileVersionContents { get; set; }
+    public virtual DbSet<FileTransferEvent> FileTransferEvents { get; set; }
+
     public virtual DbSet<FileType> FileTypes { get; set; }
 
     public virtual DbSet<ObservedFile> ObservedFiles { get; set; }
@@ -315,6 +320,19 @@ public partial class DLPSystemContext : DbContext
         {
             entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
             entity.Property(e => e.ReceivedAtUtc).HasDefaultValueSql("(sysutcdatetime())");
+
+            // Added 2026-10-08, Phase 1 of the dashboard-slowness fix (see sharded-enchanting-chipmunk.md
+            // plan and its Baseline section). Confirmed live via SET STATISTICS XML that
+            // SqlDlpDashboardQueryService.GetRecentEventsAsync (TOP(5) ... ORDER BY ReceivedAtUtc DESC,
+            // OccurredAtUtc DESC with no supporting index) was the dominant RESOURCE_SEMAPHORE cause:
+            // it forced a full Clustered Index Scan + Sort whose memory-grant estimate badly overshot
+            // actual use (7,248 KB requested vs 304 KB used), causing a ~39s grant wait in isolation, no
+            // concurrency needed. The leading/descending column order here matches that query's WHERE
+            // (OrganizationId equality, ReceivedAtUtc range) and ORDER BY exactly, so the engine can
+            // satisfy both via a single ordered index seek with no Sort operator at all.
+            entity.HasIndex(e => new { e.OrganizationId, e.ReceivedAtUtc, e.OccurredAtUtc })
+                .IsDescending(false, true, true)
+                .HasDatabaseName("IX_AuditEvents_Org_ReceivedAtUtc_OccurredAtUtc");
 
             entity.HasOne(d => d.ActionKeyNavigation).WithMany(p => p.AuditEvents)
                 .OnDelete(DeleteBehavior.ClientSetNull)
@@ -612,6 +630,23 @@ public partial class DLPSystemContext : DbContext
             entity.HasOne(d => d.Organization).WithMany(p => p.FileInventoryRecords)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_FileInventoryRecords_Organizations");
+        });
+
+        modelBuilder.Entity<FileVersionHistory>(entity =>
+        {
+            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+
+            entity.HasOne(d => d.Device).WithMany(p => p.FileVersionHistories)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileVersionHistory_Devices");
+
+            entity.HasOne(d => d.Employee).WithMany(p => p.FileVersionHistories)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileVersionHistory_Employees");
+
+            entity.HasOne(d => d.Organization).WithMany(p => p.FileVersionHistories)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_FileVersionHistory_Organizations");
         });
 
         modelBuilder.Entity<FileType>(entity =>

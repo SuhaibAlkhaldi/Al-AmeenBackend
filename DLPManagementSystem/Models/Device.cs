@@ -83,6 +83,9 @@ public partial class Device
     public virtual ICollection<FileInventoryRecord> FileInventoryRecords { get; set; } = new List<FileInventoryRecord>();
 
     [InverseProperty("Device")]
+    public virtual ICollection<FileVersionHistory> FileVersionHistories { get; set; } = new List<FileVersionHistory>();
+
+    [InverseProperty("Device")]
     public virtual ICollection<ObservedFile> ObservedFiles { get; set; } = new List<ObservedFile>();
 
     [ForeignKey("OrganizationId")]

@@ -46,4 +46,11 @@ public static class PermissionActionKeys
     // by any agent), since a device-staleness signal isn't a real grantable Allow/Deny action and
     // shouldn't get its own row in the admin's permission-management UI.
     public const string AgentSession = "agent.session";
+
+    // Same "System" category pattern as AgentSession above - reused for every synthetic AuditEvent
+    // the backend itself raises from watching FileVersionHistory (not reported by any agent), across
+    // Phase 4 (immediate classification-downgrade alert, in AgentFileInventoryService) and Phase 5
+    // (RapidFilePropagation, its own background worker) of the "File Tracking" plan. Neither is a
+    // real grantable Allow/Deny action.
+    public const string FileInventoryMonitor = "file.inventory-monitor";
 }

@@ -6,7 +6,8 @@ using Microsoft.Extensions.Options;
 namespace DLPManagementSystem.Service.BackgroundServices
 {
     // Hard-deletes FileInventoryRecords rows that have been soft-deleted (IsDeleted=true) for longer
-    // than FileInventoryCleanup:RetentionDays. Simpler than AuditRetentionWorker - there is nothing to
+    // than FileInventoryCleanup:RetentionDays, and removes captured file text (FileVersionContent) older than
+    // the same window while keeping its version history. Simpler than AuditRetentionWorker - there is nothing to
     // archive here (a stale file-inventory row carries no investigative/audit value once the file is
     // gone and the row has already aged out; AuditEvents' archive-before-purge caution is about
     // evidence, this is just bookkeeping), so this is a straight batched ExecuteDeleteAsync loop.
@@ -96,6 +97,83 @@ namespace DLPManagementSystem.Service.BackgroundServices
                 {
                     break;
                 }
+            }
+
+            // Browser send observations (Phase 7) expire on the same retention window. They are append-only, so they
+            // are removed in batches by ReceivedAtUtc, never edited.
+            var expiredTransferCount = 0;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var batchIds = await db.FileTransferEvents
+                    .Where(x => x.ReceivedAtUtc < cutoffUtc)
+                    .OrderBy(x => x.ReceivedAtUtc)
+                    .Take(options.BatchSize)
+                    .Select(x => x.Id)
+                    .ToListAsync(cancellationToken);
+
+                if (batchIds.Count == 0)
+                {
+                    break;
+                }
+
+                await db.FileTransferEvents
+                    .Where(x => batchIds.Contains(x.Id))
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                expiredTransferCount += batchIds.Count;
+
+                if (batchIds.Count < options.BatchSize)
+                {
+                    break;
+                }
+            }
+
+            if (expiredTransferCount > 0)
+            {
+                _logger.LogInformation(
+                    "File inventory cleanup run: removed {ExpiredTransferCount} file transfer events received before {CutoffUtc:o}.",
+                    expiredTransferCount, cutoffUtc);
+            }
+
+            // Captured file text (File Tracking diff viewer) expires on the same retention window, but on its own track:
+            // the text is the sensitive part, so it goes once it passes the window, while the version history it belongs
+            // to is kept.
+            var expiredTextCount = 0;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var batchIds = await db.FileVersionContents
+                    .Where(x => x.CapturedAtUtc < cutoffUtc)
+                    .OrderBy(x => x.CapturedAtUtc)
+                    .Take(options.BatchSize)
+                    .Select(x => x.FileVersionHistoryId)
+                    .ToListAsync(cancellationToken);
+
+                if (batchIds.Count == 0)
+                {
+                    break;
+                }
+
+                await db.FileVersionContents
+                    .Where(x => batchIds.Contains(x.FileVersionHistoryId))
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                expiredTextCount += batchIds.Count;
+
+                if (batchIds.Count < options.BatchSize)
+                {
+                    break;
+                }
+            }
+
+            if (expiredTextCount > 0)
+            {
+                _logger.LogInformation(
+                    "File inventory cleanup run: removed {ExpiredTextCount} captured file texts older than {CutoffUtc:o}.",
+                    expiredTextCount, cutoffUtc);
             }
 
             if (totalDeleted > 0)
