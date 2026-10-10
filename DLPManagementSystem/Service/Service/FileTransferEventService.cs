@@ -11,9 +11,11 @@ namespace DLPManagementSystem.Service.Service
     {
         private const int MaxBatchEvents = 500;
 
-        // A channel is listed here once the browser extension has an adapter for it. Gmail is observed today; OUTLOOK is
-        // listed ahead of its adapter, so its observations are accepted as soon as the extension sends them.
-        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK" };
+        // A channel is listed here once the browser extension has an adapter for it. Gmail and Outlook are observed
+        // today; TEAMS is listed ahead of its adapter, so its observations are accepted as soon as the extension
+        // sends them. A Teams chat has no To/Cc distinction, so its recipients carry a null RecipientRole (allowed
+        // above) and kind CHAT_NAME with evidence TEAMS_CHAT_NAME (already wired into EvidenceByKind below).
+        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS" };
         private static readonly HashSet<string> AllowedRecipientKinds = new(StringComparer.Ordinal) { "EMAIL", "CHAT_NAME", "GROUP_NAME", "UNKNOWN" };
         private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal) { "TO", "CC" };
 

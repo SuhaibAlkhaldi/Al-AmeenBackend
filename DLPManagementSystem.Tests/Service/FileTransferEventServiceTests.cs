@@ -76,6 +76,31 @@ namespace DLPManagementSystem.Tests.Service
         }
 
         [Fact]
+        public async Task TeamsChatName_IsAccepted_WithNullRoleAndMediumRecipientLevel()
+        {
+            // A Teams chat has no To/Cc fields, so its recipients carry role null and kind CHAT_NAME. A chat display
+            // name can collide between people, so RecipientLevel is MEDIUM (not HIGH like an email address) even
+            // though the file itself matches by byte hash (HIGH) - the weaker of the two wins for Overall.
+            var teams = Observation();
+            teams.Channel = "TEAMS";
+            teams.RecipientRole = null;
+            teams.RecipientKind = "CHAT_NAME";
+            teams.RecipientValue = "Ahmad Khaled";
+            teams.RecipientEvidenceType = "TEAMS_CHAT_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, teams);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("TEAMS", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("Ahmad Khaled", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("MEDIUM", stored.RecipientEvidenceLevel);
+            Assert.Equal("MEDIUM", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
         public async Task RecipientAddress_IsStoredNormalized()
         {
             await IngestAsync(DeviceA, OrgA, Observation(recipient: "  Consultant@Example.COM "));
