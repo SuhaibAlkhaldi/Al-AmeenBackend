@@ -11,11 +11,12 @@ namespace DLPManagementSystem.Service.Service
     {
         private const int MaxBatchEvents = 500;
 
-        // A channel is listed here once the browser extension has an adapter for it. Gmail and Outlook are observed
-        // today; TEAMS is listed ahead of its adapter, so its observations are accepted as soon as the extension
-        // sends them. A Teams chat has no To/Cc distinction, so its recipients carry a null RecipientRole (allowed
-        // above) and kind CHAT_NAME with evidence TEAMS_CHAT_NAME (already wired into EvidenceByKind below).
-        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS" };
+        // A channel is listed here once the browser extension has an adapter for it. Gmail, Outlook and Teams are
+        // observed today. A WhatsApp send's recipient is a 1:1 contact (kind CHAT_NAME, evidence CHAT_CONTACT_NAME)
+        // or a group, recorded by group name alone since the full member roster isn't on the page at send time
+        // (kind GROUP_NAME, evidence GROUP_NAME) - both kinds and evidence types were already wired into
+        // AllowedRecipientKinds/EvidenceByKind below from the original Phase 7 plumbing, unused until now.
+        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP" };
         private static readonly HashSet<string> AllowedRecipientKinds = new(StringComparer.Ordinal) { "EMAIL", "CHAT_NAME", "GROUP_NAME", "UNKNOWN" };
         private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal) { "TO", "CC" };
 

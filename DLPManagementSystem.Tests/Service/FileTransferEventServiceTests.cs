@@ -101,6 +101,55 @@ namespace DLPManagementSystem.Tests.Service
         }
 
         [Fact]
+        public async Task WhatsAppChatContactName_IsAccepted_WithLowRecipientLevel()
+        {
+            // A WhatsApp 1:1 chat has no To/Cc fields either, same as Teams, but a WhatsApp contact name is a
+            // user-saved label rather than an org-validated display name, so RecipientLevel is LOW (weaker than
+            // Teams' MEDIUM) - and a LOW recipient forces Overall to LOW even though the file matches by byte hash.
+            var whatsapp = Observation();
+            whatsapp.Channel = "WHATSAPP";
+            whatsapp.RecipientRole = null;
+            whatsapp.RecipientKind = "CHAT_NAME";
+            whatsapp.RecipientValue = "Abu Hisham";
+            whatsapp.RecipientEvidenceType = "CHAT_CONTACT_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, whatsapp);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("WHATSAPP", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("Abu Hisham", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("LOW", stored.RecipientEvidenceLevel);
+            Assert.Equal("LOW", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
+        public async Task WhatsAppGroupName_IsAccepted_WithLowRecipientLevel()
+        {
+            // A WhatsApp group's full member roster isn't on the page at send time (only Group Info, which isn't
+            // open), so the recipient recorded is the group name alone - kind GROUP_NAME, evidence GROUP_NAME, LOW.
+            var whatsapp = Observation();
+            whatsapp.Channel = "WHATSAPP";
+            whatsapp.RecipientRole = null;
+            whatsapp.RecipientKind = "GROUP_NAME";
+            whatsapp.RecipientValue = "DLP AMIN";
+            whatsapp.RecipientEvidenceType = "GROUP_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, whatsapp);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("WHATSAPP", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("DLP AMIN", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("LOW", stored.RecipientEvidenceLevel);
+            Assert.Equal("LOW", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
         public async Task RecipientAddress_IsStoredNormalized()
         {
             await IngestAsync(DeviceA, OrgA, Observation(recipient: "  Consultant@Example.COM "));
