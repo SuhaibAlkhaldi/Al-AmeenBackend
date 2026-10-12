@@ -11,9 +11,16 @@ namespace DLPManagementSystem.Service.Service
     {
         private const int MaxBatchEvents = 500;
 
-        // A channel is listed here once the browser extension has an adapter for it. Gmail is observed today; OUTLOOK is
-        // listed ahead of its adapter, so its observations are accepted as soon as the extension sends them.
-        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK" };
+        // A channel is listed here once the browser extension has an adapter for it. Gmail, Outlook, Teams and
+        // Yahoo Mail all report EMAIL-kind recipients (kind EMAIL, evidence EMAIL_IN_SEND_FORM) - Yahoo reused
+        // that plumbing as-is, no new kind/evidence type needed. A WhatsApp send's recipient is a 1:1 contact
+        // (kind CHAT_NAME, evidence CHAT_CONTACT_NAME) or a group, recorded by group name alone since the full
+        // member roster isn't on the page at send time (kind GROUP_NAME, evidence GROUP_NAME) - both kinds and
+        // evidence types were already wired into AllowedRecipientKinds/EvidenceByKind below from the original
+        // Phase 7 plumbing, unused until WhatsApp activated them. Telegram reuses that exact same CHAT_NAME/
+        // GROUP_NAME pairing (positive chat id = 1:1 contact, negative = group/channel), so it needed no new
+        // kind/evidence type either.
+        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP", "YAHOO", "TELEGRAM" };
         private static readonly HashSet<string> AllowedRecipientKinds = new(StringComparer.Ordinal) { "EMAIL", "CHAT_NAME", "GROUP_NAME", "UNKNOWN" };
         private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal) { "TO", "CC" };
 

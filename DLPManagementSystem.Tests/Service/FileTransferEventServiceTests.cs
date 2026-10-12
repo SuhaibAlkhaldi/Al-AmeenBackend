@@ -76,6 +76,148 @@ namespace DLPManagementSystem.Tests.Service
         }
 
         [Fact]
+        public async Task YahooChannel_IsAccepted_WithHighRecipientLevel()
+        {
+            // Yahoo Mail's recipient is an EMAIL kind/evidence pair exactly like Gmail and Outlook - no new kind
+            // or evidence type was needed, only adding "YAHOO" to AllowedChannels.
+            var yahoo = Observation(recipient: "consultant@example.com");
+            yahoo.Channel = "YAHOO";
+
+            var response = await IngestAsync(DeviceA, OrgA, yahoo);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("YAHOO", stored.Channel);
+            Assert.Equal("TO", stored.RecipientRole);
+            Assert.Equal("consultant@example.com", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("HIGH", stored.RecipientEvidenceLevel);
+            Assert.Equal("HIGH", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
+        public async Task TeamsChatName_IsAccepted_WithNullRoleAndMediumRecipientLevel()
+        {
+            // A Teams chat has no To/Cc fields, so its recipients carry role null and kind CHAT_NAME. A chat display
+            // name can collide between people, so RecipientLevel is MEDIUM (not HIGH like an email address) even
+            // though the file itself matches by byte hash (HIGH) - the weaker of the two wins for Overall.
+            var teams = Observation();
+            teams.Channel = "TEAMS";
+            teams.RecipientRole = null;
+            teams.RecipientKind = "CHAT_NAME";
+            teams.RecipientValue = "Ahmad Khaled";
+            teams.RecipientEvidenceType = "TEAMS_CHAT_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, teams);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("TEAMS", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("Ahmad Khaled", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("MEDIUM", stored.RecipientEvidenceLevel);
+            Assert.Equal("MEDIUM", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
+        public async Task WhatsAppChatContactName_IsAccepted_WithLowRecipientLevel()
+        {
+            // A WhatsApp 1:1 chat has no To/Cc fields either, same as Teams, but a WhatsApp contact name is a
+            // user-saved label rather than an org-validated display name, so RecipientLevel is LOW (weaker than
+            // Teams' MEDIUM) - and a LOW recipient forces Overall to LOW even though the file matches by byte hash.
+            var whatsapp = Observation();
+            whatsapp.Channel = "WHATSAPP";
+            whatsapp.RecipientRole = null;
+            whatsapp.RecipientKind = "CHAT_NAME";
+            whatsapp.RecipientValue = "Abu Hisham";
+            whatsapp.RecipientEvidenceType = "CHAT_CONTACT_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, whatsapp);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("WHATSAPP", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("Abu Hisham", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("LOW", stored.RecipientEvidenceLevel);
+            Assert.Equal("LOW", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
+        public async Task WhatsAppGroupName_IsAccepted_WithLowRecipientLevel()
+        {
+            // A WhatsApp group's full member roster isn't on the page at send time (only Group Info, which isn't
+            // open), so the recipient recorded is the group name alone - kind GROUP_NAME, evidence GROUP_NAME, LOW.
+            var whatsapp = Observation();
+            whatsapp.Channel = "WHATSAPP";
+            whatsapp.RecipientRole = null;
+            whatsapp.RecipientKind = "GROUP_NAME";
+            whatsapp.RecipientValue = "DLP AMIN";
+            whatsapp.RecipientEvidenceType = "GROUP_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, whatsapp);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("WHATSAPP", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("DLP AMIN", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("LOW", stored.RecipientEvidenceLevel);
+            Assert.Equal("LOW", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
+        public async Task TelegramChatContactName_IsAccepted_WithLowRecipientLevel()
+        {
+            // Telegram reuses the exact same CHAT_NAME/CHAT_CONTACT_NAME pairing WhatsApp already activated - a
+            // positive Telegram chat id means a 1:1 contact, read from the chat header's display name.
+            var telegram = Observation();
+            telegram.Channel = "TELEGRAM";
+            telegram.RecipientRole = null;
+            telegram.RecipientKind = "CHAT_NAME";
+            telegram.RecipientValue = "Abu Hisham";
+            telegram.RecipientEvidenceType = "CHAT_CONTACT_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, telegram);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("TELEGRAM", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("Abu Hisham", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("LOW", stored.RecipientEvidenceLevel);
+            Assert.Equal("LOW", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
+        public async Task TelegramGroupName_IsAccepted_WithLowRecipientLevel()
+        {
+            // A negative Telegram chat id means a group, supergroup or channel - recorded by its display name
+            // alone, the same GROUP_NAME/GROUP_NAME pairing WhatsApp's group sends already activated.
+            var telegram = Observation();
+            telegram.Channel = "TELEGRAM";
+            telegram.RecipientRole = null;
+            telegram.RecipientKind = "GROUP_NAME";
+            telegram.RecipientValue = "KING OF YARMOUK";
+            telegram.RecipientEvidenceType = "GROUP_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, telegram);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("TELEGRAM", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("KING OF YARMOUK", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("LOW", stored.RecipientEvidenceLevel);
+            Assert.Equal("LOW", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
         public async Task RecipientAddress_IsStoredNormalized()
         {
             await IngestAsync(DeviceA, OrgA, Observation(recipient: "  Consultant@Example.COM "));
