@@ -76,6 +76,26 @@ namespace DLPManagementSystem.Tests.Service
         }
 
         [Fact]
+        public async Task YahooChannel_IsAccepted_WithHighRecipientLevel()
+        {
+            // Yahoo Mail's recipient is an EMAIL kind/evidence pair exactly like Gmail and Outlook - no new kind
+            // or evidence type was needed, only adding "YAHOO" to AllowedChannels.
+            var yahoo = Observation(recipient: "consultant@example.com");
+            yahoo.Channel = "YAHOO";
+
+            var response = await IngestAsync(DeviceA, OrgA, yahoo);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("YAHOO", stored.Channel);
+            Assert.Equal("TO", stored.RecipientRole);
+            Assert.Equal("consultant@example.com", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("HIGH", stored.RecipientEvidenceLevel);
+            Assert.Equal("HIGH", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
         public async Task TeamsChatName_IsAccepted_WithNullRoleAndMediumRecipientLevel()
         {
             // A Teams chat has no To/Cc fields, so its recipients carry role null and kind CHAT_NAME. A chat display
