@@ -17,8 +17,10 @@ namespace DLPManagementSystem.Service.Service
         // (kind CHAT_NAME, evidence CHAT_CONTACT_NAME) or a group, recorded by group name alone since the full
         // member roster isn't on the page at send time (kind GROUP_NAME, evidence GROUP_NAME) - both kinds and
         // evidence types were already wired into AllowedRecipientKinds/EvidenceByKind below from the original
-        // Phase 7 plumbing, unused until WhatsApp activated them.
-        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP", "YAHOO" };
+        // Phase 7 plumbing, unused until WhatsApp activated them. Telegram reuses that exact same CHAT_NAME/
+        // GROUP_NAME pairing (positive chat id = 1:1 contact, negative = group/channel), so it needed no new
+        // kind/evidence type either.
+        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP", "YAHOO", "TELEGRAM" };
         private static readonly HashSet<string> AllowedRecipientKinds = new(StringComparer.Ordinal) { "EMAIL", "CHAT_NAME", "GROUP_NAME", "UNKNOWN" };
         private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal) { "TO", "CC" };
 

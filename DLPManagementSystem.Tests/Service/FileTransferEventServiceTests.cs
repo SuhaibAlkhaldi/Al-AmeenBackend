@@ -170,6 +170,54 @@ namespace DLPManagementSystem.Tests.Service
         }
 
         [Fact]
+        public async Task TelegramChatContactName_IsAccepted_WithLowRecipientLevel()
+        {
+            // Telegram reuses the exact same CHAT_NAME/CHAT_CONTACT_NAME pairing WhatsApp already activated - a
+            // positive Telegram chat id means a 1:1 contact, read from the chat header's display name.
+            var telegram = Observation();
+            telegram.Channel = "TELEGRAM";
+            telegram.RecipientRole = null;
+            telegram.RecipientKind = "CHAT_NAME";
+            telegram.RecipientValue = "Abu Hisham";
+            telegram.RecipientEvidenceType = "CHAT_CONTACT_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, telegram);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("TELEGRAM", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("Abu Hisham", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("LOW", stored.RecipientEvidenceLevel);
+            Assert.Equal("LOW", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
+        public async Task TelegramGroupName_IsAccepted_WithLowRecipientLevel()
+        {
+            // A negative Telegram chat id means a group, supergroup or channel - recorded by its display name
+            // alone, the same GROUP_NAME/GROUP_NAME pairing WhatsApp's group sends already activated.
+            var telegram = Observation();
+            telegram.Channel = "TELEGRAM";
+            telegram.RecipientRole = null;
+            telegram.RecipientKind = "GROUP_NAME";
+            telegram.RecipientValue = "KING OF YARMOUK";
+            telegram.RecipientEvidenceType = "GROUP_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, telegram);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("TELEGRAM", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("KING OF YARMOUK", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("LOW", stored.RecipientEvidenceLevel);
+            Assert.Equal("LOW", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
         public async Task RecipientAddress_IsStoredNormalized()
         {
             await IngestAsync(DeviceA, OrgA, Observation(recipient: "  Consultant@Example.COM "));
