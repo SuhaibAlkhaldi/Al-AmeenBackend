@@ -218,6 +218,56 @@ namespace DLPManagementSystem.Tests.Service
         }
 
         [Fact]
+        public async Task WhatsAppDesktopChatContactName_IsAccepted_WithLowRecipientLevel()
+        {
+            // Phase 8: WHATSAPP_DESKTOP is WhatsApp Desktop's own CDP-based observer (not the browser extension) -
+            // it reads the identical web.whatsapp.com DOM, so it reuses WHATSAPP's exact CHAT_NAME/
+            // CHAT_CONTACT_NAME pairing unchanged.
+            var whatsappDesktop = Observation();
+            whatsappDesktop.Channel = "WHATSAPP_DESKTOP";
+            whatsappDesktop.RecipientRole = null;
+            whatsappDesktop.RecipientKind = "CHAT_NAME";
+            whatsappDesktop.RecipientValue = "Abu Hisham";
+            whatsappDesktop.RecipientEvidenceType = "CHAT_CONTACT_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, whatsappDesktop);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("WHATSAPP_DESKTOP", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("Abu Hisham", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("LOW", stored.RecipientEvidenceLevel);
+            Assert.Equal("LOW", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
+        public async Task TeamsDesktopChatName_IsAccepted_WithMediumRecipientLevel()
+        {
+            // Phase 8: TEAMS_DESKTOP is the new Microsoft Teams desktop app's own CDP-based observer (not the
+            // browser extension) - it reads the identical teams.microsoft.com/teams.live.com DOM, so it reuses
+            // TEAMS' exact CHAT_NAME/TEAMS_CHAT_NAME pairing unchanged.
+            var teamsDesktop = Observation();
+            teamsDesktop.Channel = "TEAMS_DESKTOP";
+            teamsDesktop.RecipientRole = null;
+            teamsDesktop.RecipientKind = "CHAT_NAME";
+            teamsDesktop.RecipientValue = "Ahmad Khaled";
+            teamsDesktop.RecipientEvidenceType = "TEAMS_CHAT_NAME";
+
+            var response = await IngestAsync(DeviceA, OrgA, teamsDesktop);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("TEAMS_DESKTOP", stored.Channel);
+            Assert.Null(stored.RecipientRole);
+            Assert.Equal("Ahmad Khaled", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("MEDIUM", stored.RecipientEvidenceLevel);
+            Assert.Equal("MEDIUM", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
         public async Task RecipientAddress_IsStoredNormalized()
         {
             await IngestAsync(DeviceA, OrgA, Observation(recipient: "  Consultant@Example.COM "));

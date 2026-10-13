@@ -19,8 +19,13 @@ namespace DLPManagementSystem.Service.Service
         // evidence types were already wired into AllowedRecipientKinds/EvidenceByKind below from the original
         // Phase 7 plumbing, unused until WhatsApp activated them. Telegram reuses that exact same CHAT_NAME/
         // GROUP_NAME pairing (positive chat id = 1:1 contact, negative = group/channel), so it needed no new
-        // kind/evidence type either.
-        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP", "YAHOO", "TELEGRAM" };
+        // kind/evidence type either. WHATSAPP_DESKTOP (Phase 8) is WhatsApp Desktop's own CDP-based observer,
+        // not the browser extension - it reuses the exact same CHAT_NAME/GROUP_NAME pairing as WHATSAPP since
+        // it reads the identical web.whatsapp.com DOM, just from inside WhatsApp Desktop's WebView2 instead of
+        // a browser tab. TEAMS_DESKTOP (Phase 8) is the new Microsoft Teams desktop app's own CDP-based observer,
+        // reusing the exact same CHAT_NAME/TEAMS_CHAT_NAME pairing as TEAMS since it reads the identical
+        // teams.microsoft.com/teams.live.com DOM, just from inside that app's WebView2 instead of a browser tab.
+        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP", "YAHOO", "TELEGRAM", "WHATSAPP_DESKTOP", "TEAMS_DESKTOP" };
         private static readonly HashSet<string> AllowedRecipientKinds = new(StringComparer.Ordinal) { "EMAIL", "CHAT_NAME", "GROUP_NAME", "UNKNOWN" };
         private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal) { "TO", "CC" };
 
