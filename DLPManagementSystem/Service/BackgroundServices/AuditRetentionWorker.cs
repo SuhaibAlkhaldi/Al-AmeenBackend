@@ -85,12 +85,24 @@ namespace DLPManagementSystem.Service.BackgroundServices
 
             var cutoffUtc = DateTimeOffset.UtcNow.AddDays(-options.RetentionDays);
 
-            var candidates = await db.AuditEvents
+            // dashboard-rollup guard: never purge a raw AuditEvent the rollup hasn't counted yet -
+            // an organization with no watermark row at all for either OccurredAtUtc-based rollup
+            // kind (HourlyOccurred, EmployeeDaily) has nothing proven safe, so none of its rows are
+            // eligible regardless of age. In practice this almost never narrows anything once the
+            // rollup has been running for a while (RetentionDays is normally far larger than
+            // DashboardRollup:LateEventLookbackHours/EmployeeRollupRecomputeDays), but it matters
+            // for an aggressively short RetentionDays, or before the rollup has ever run.
+            var rollupSafeBeforeUtcByOrg = await GetRollupSafeBeforeUtcByOrganizationAsync(db, cancellationToken);
+
+            var candidates = (await db.AuditEvents
                 .Where(x => x.OccurredAtUtc < cutoffUtc)
                 .Where(x => !db.Alerts.Any(a => a.AuditEventId == x.Id && a.AlertStatusId != closedStatusId.Value))
                 .OrderBy(x => x.OccurredAtUtc)
+                .Select(x => new { x.Id, x.OrganizationId, x.OccurredAtUtc })
+                .ToListAsync(cancellationToken))
+                .Where(x => rollupSafeBeforeUtcByOrg.TryGetValue(x.OrganizationId, out var safeBeforeUtc) && x.OccurredAtUtc < safeBeforeUtc)
                 .Select(x => new { x.Id, x.OrganizationId })
-                .ToListAsync(cancellationToken);
+                .ToList();
 
             var skippedCountByOrg = (await db.AuditEvents
                 .Where(x => x.OccurredAtUtc < cutoffUtc)
@@ -244,6 +256,41 @@ namespace DLPManagementSystem.Service.BackgroundServices
                 "({ArchivedAlerts} closed alerts, {ArchivedAiResults} AI results, {ArchivedOverrides} AI overrides), " +
                 "purged {PurgedEvents} audit events, skipped {SkippedEvents} due to open alerts. Archive: {ArchivePath}",
                 organizationId, archivedEvents, archivedAlerts, archivedAiResults, archivedOverrides, archivedEvents, skippedCount, filePath);
+        }
+
+        // dashboard-rollup guard - see RunRetentionCycleAsync's own comment. Only the two
+        // OccurredAtUtc-based rollup kinds are relevant here (retention itself filters on
+        // OccurredAtUtc); HourlyReceived's watermark says nothing about OccurredAtUtc coverage.
+        private static async Task<Dictionary<Guid, DateTimeOffset>> GetRollupSafeBeforeUtcByOrganizationAsync(
+            DLPSystemContext db, CancellationToken cancellationToken)
+        {
+            var relevantKinds = new[]
+            {
+                DashboardRollupKind.HourlyOccurred.ToString(),
+                DashboardRollupKind.EmployeeDaily.ToString()
+            };
+
+            var watermarks = await db.DashboardRollupWatermarks
+                .Where(x => relevantKinds.Contains(x.RollupKind))
+                .Select(x => new { x.OrganizationId, x.RollupKind, x.LastComputedThroughUtc })
+                .ToListAsync(cancellationToken);
+
+            var byOrg = watermarks.GroupBy(x => x.OrganizationId).ToDictionary(g => g.Key, g => g.ToList());
+
+            var result = new Dictionary<Guid, DateTimeOffset>();
+            foreach (var (organizationId, rows) in byOrg)
+            {
+                // An organization needs BOTH kinds' watermarks before anything is provably safe -
+                // a row could still be unrolled-up in whichever kind is missing/behind.
+                if (rows.Count < relevantKinds.Length)
+                {
+                    continue;
+                }
+
+                result[organizationId] = rows.Min(x => x.LastComputedThroughUtc);
+            }
+
+            return result;
         }
 
         private static string SerializeAuditEvent(AuditEvent x) => JsonSerializer.Serialize(new

@@ -209,14 +209,132 @@ to move to the split endpoints, each one maps to a slice of the `/summary` respo
 | `weeklyTrend` | `/weekly-trend` |
 | `policyVersion` | not exposed on any split endpoint (unused by current clients) |
 
+## Rollup (dashboard-rollup)
+
+`/kpis`, `/breakdown`, `/weekly-trend` and `/risk` can optionally read from two small pre-aggregated
+tables instead of scanning `dbo.AuditEvents` directly, so their latency stays roughly constant as
+that table grows into the tens of millions of rows. `/summary`, `/status` and `/recent-events` are
+never affected by this - they always read the raw table.
+
+**Tables** (`DLPManagementSystem/Models/DashboardHourlyRollup.cs` /
+`DashboardEmployeeDailyRollup.cs` / `DashboardRollupWatermark.cs`):
+- `DashboardHourlyRollup` - one row per (org, `TimeBasis`, hour, decision, action, reason). `TimeBasis`
+  is `Received` or `Occurred`, kept separate and never unified - `/kpis`/`/breakdown` read the
+  `Received` rows (matching the raw path's own `ReceivedAtUtc` filter); `/weekly-trend` reads the
+  `Occurred` rows. Unifying the two would change either endpoint's visible numbers.
+- `DashboardEmployeeDailyRollup` - one row per (org, employee, day, action, decision), bucketed from
+  `OccurredAtUtc`. Feeds `/risk`.
+- `DashboardRollupWatermark` - per (org, rollup kind), how far that rollup has actually been
+  computed (`LastComputedThroughUtc`, exclusive). Read by the retention worker's purge guard (below)
+  and by the manual backfill command, to resume where a previous run left off.
+
+**Window alignment and drift.** The rollup's own grain is the hour (`DashboardHourlyRollup`) or the
+UTC day (`DashboardEmployeeDailyRollup`). Every window the rollup read path computes is floored to
+that grain before querying, instead of using the raw path's continuous-to-the-minute/second window.
+This is a deliberate, bounded difference from the raw numbers, not a bug:
+- `/kpis`, `/breakdown`: drift ≤ 1 hour (the rollup's `to` is "now" floored to the hour, vs the raw
+  path's `to` floored to the minute).
+- `/weekly-trend`: drift ≤ 1 hour, same reason (its 28-day window is anchored off the same
+  hour-floored "now").
+- `/risk`: drift ≤ 1 day (its 30-day window is anchored off "now" floored to the UTC day - "today"
+  is excluded from the rollup-backed window entirely until the day rolls over).
+
+**Flags** (`DashboardRollup` config section, both default `false`):
+- `RefreshEnabled` - `DashboardRollupRefreshWorker` only recomputes the rollup tables when `true`.
+  Safe to turn on well before `UseRollup` - it only ever writes to the two rollup tables.
+- `UseRollup` - the four endpoints above only read from the rollup tables when `true`. Flipping this
+  back to `false` at any time fully reverts to the raw path; `RefreshEnabled` can keep running or not
+  either way.
+
+**Refresh mechanism.** `DashboardRollupRefreshWorker` is a `BackgroundService` (not an indexed view)
+that, every `RefreshIntervalSeconds` (default 60s), calls `DashboardRollupRefreshService
+.RefreshRecentWindowAsync`:
+- Takes a session-scoped `sp_getapplock` (resource `DashboardRollupRefresh`) before doing any work,
+  so only one app instance ever recomputes at a time - if another instance already holds it, the
+  tick is skipped (not an error; expected whenever more than one instance is running, e.g. during a
+  pool recycle).
+- Re-aggregates only a trailing rolling window per rollup kind: `LateEventLookbackHours` (default
+  48h, floored to the hour) for both `DashboardHourlyRollup` bases, and
+  `EffectiveEmployeeRollupRecomputeDays` for `DashboardEmployeeDailyRollup`. The latter is
+  `EmployeeRollupRecomputeDays` if set, otherwise derived as `ceil(LateEventLookbackHours/24)+1`
+  (48h -> 3 days) so it can never fall short of the hourly lookback - a 48h-old event can land on a
+  UTC calendar date up to 2 days before today, and the derivation's "+1" keeps a one-day margin
+  against that boundary (clock drift, a tick landing right at a day rollover) rather than sitting
+  exactly on it.
+- **An event whose relevant timestamp is older than that lookback when it's finally received is NOT
+  picked up automatically by the regular per-tick window.** This matters because `ReceivedAtUtc` is
+  always "now" (set by `AgentAuditEventService` at ingestion) while `OccurredAtUtc` is agent-supplied
+  and can be old (an agent that reconnects after being offline). Two ways this is covered beyond the
+  regular window:
+  - The manual backfill command (below), for an operator-triggered catch-up of any age.
+  - The **daily wide sweep** (`EmployeeRollupWideSweepEnabled`, default `true`): once per UTC day,
+    at `EmployeeRollupWideSweepHourUtc` (default `3`, pick a quiet hour for your traffic), the same
+    tick that would otherwise do the regular narrow EmployeeDaily window also re-aggregates
+    `EmployeeRollupWideSweepDays` (default `30`, matching `RiskLookbackDays`) instead, automatically
+    catching devices that were offline for longer than `LateEventLookbackHours` and only send their
+    backlog once reconnected - no manual backfill call needed for that case. It runs from inside the
+    same `RefreshRecentWindowAsync` call as the regular tick, so it always holds the same
+    `sp_getapplock` - it can never run concurrently with another instance's tick or with a manual
+    backfill call (whichever is already holding the lock wins; the other waits or skips, same as any
+    other tick). A small per-organization marker (`DashboardRollupWatermark.LastWideSweepUtc`)
+    ensures it fires at most once per organization per UTC day. Set
+    `EmployeeRollupWideSweepEnabled=false` to disable this safety net entirely and rely only on the
+    regular window plus manual backfill for anything older.
+- Visibility: the local dev database has `READ_COMMITTED_SNAPSHOT`/snapshot isolation **off**, and
+  this feature does not turn it on. Instead, the (potentially slow) aggregation `SELECT` against raw
+  `AuditEvents` runs with no open transaction, into memory; only the bounded delete-then-insert of
+  the already-computed result set runs inside a short transaction. A dashboard reader under the
+  default READ COMMITTED isolation therefore either sees the complete old rows or the complete new
+  rows for a bucket - never a partially-deleted/partially-inserted one - at worst it blocks briefly
+  on that short transaction's locks. Measured directly on the local database (not assumed): a
+  delete+insert of ~800 rows (matching an observed real cycle's write size) takes **~100-130ms**, and
+  a concurrent reader issuing the exact same query `RollupDlpDashboardQueryService` would run, while
+  that transaction is held open, blocks for the transaction's full remaining duration (confirmed
+  empirically: a deliberately-held-open transaction blocked a concurrent reader for the full hold
+  time). This was judged acceptable as-is (no RCSI, no MERGE-based rewrite) given the small measured
+  duration; revisit only if production numbers show real contention.
+
+**Manual backfill.** `POST /api/v1/admin/dashboard-rollup/backfill` (`SuperAdmin` only, `Kind`
+validated against the enum so an invalid value is a clean 400, not an unhandled 500) calls
+`BackfillOneChunkAsync` up to `MaxChunks` times (default 1, capped at 30 per call), each chunk
+`BackfillChunkDays` (default 1) wide, resuming from the organization's current watermark every time
+- safe to call repeatedly/resume after an interruption, and the only way historical data (older than
+the regular cycle's lookback) ever enters the rollup. `GET
+/api/v1/admin/dashboard-rollup/watermarks` reports current progress per rollup kind.
+
+**Retention guard.** `AuditRetentionWorker` never purges a raw `AuditEvents` row whose
+`OccurredAtUtc` is newer than the organization's `HourlyOccurred`/`EmployeeDaily` watermark (the
+lower of the two) - an organization missing either watermark has nothing purged regardless of age.
+In practice this rarely narrows anything, since `AuditRetention:RetentionDays` (default `0`,
+disabled) is normally far larger than the rollup's own lookback windows; it only matters for an
+aggressively short retention setting, or before the rollup has ever run.
+
+**Covering index.** `scripts/AuditEvents_CoveringIndex.sql` extends the existing
+`IX_AuditEvents_Org_ReceivedAtUtc_OccurredAtUtc` index (via `WITH (DROP_EXISTING = ON)`, not a second
+index) with `INCLUDE (DecisionId, ActionKey, EmployeeId, ReasonCodeId)`, so the rollup's own
+aggregation queries (and the raw path, when `UseRollup=false`) don't fall back to the clustered index
+for those columns. Deliberately **not** an EF migration - `MigrateAsync` runs automatically at app
+startup, and building/rebuilding an index on a table this size must happen in a planned maintenance
+window. Run it by hand; it ships both an offline (`DROP_EXISTING=ON`) form - the only one usable on
+Standard/Express edition, and the one actually tested against the local database - and a commented-out
+`ONLINE=ON` form for Enterprise/Developer edition.
+
+**Enabling in production** (see the script and `DashboardRollupAdminController` for the pieces):
+1. Deploy the code with both flags `false` (this is the default - no behavior change).
+2. Let the migration create the two rollup tables (additive only, no data).
+3. Run `scripts/AuditEvents_CoveringIndex.sql` by hand in a maintenance window.
+4. Run the manual backfill for every organization until `watermarks` shows no more remaining.
+5. Set `RefreshEnabled=true` and let the worker run for at least one full day; compare its numbers
+   against the raw path for that day.
+6. Only then set `UseRollup=true`.
+
+**Rolling back**: set `UseRollup=false` (and, if desired, `RefreshEnabled=false`). Nothing about the
+raw tables or the raw query path is ever changed by this feature, so rollback is instant and has no
+data-loss risk.
+
 ## Future improvements (proposed, not implemented)
 
-- **Possible index**: `/kpis`, `/breakdown` and `/recent-events` all filter `dbo.AuditEvents` by
-  `OrganizationId` + a `ReceivedAtUtc` range (already covered by the existing
-  `IX_AuditEvents_Org_ReceivedAtUtc_OccurredAtUtc` index from migration
-  `AddAuditEventsOrgReceivedOccurredIndex`), then aggregate/select `DecisionId` (and, for
-  `/recent-events`, `ActionKey`) per matching row. A covering index such as
-  `(OrganizationId, ReceivedAtUtc) INCLUDE (DecisionId, ActionKey)` could save the lookup back to
-  the clustered index for those columns on larger datasets. Deliberately not added here - no
-  migration was created. Revisit this only if real production numbers after deploy actually show
-  it's needed; it's a separate, follow-up task.
+- **Possible index**: ~~`/kpis`, `/breakdown` and `/recent-events` all filter `dbo.AuditEvents` by
+  `OrganizationId` + a `ReceivedAtUtc` range~~ - **implemented**, see "Rollup" above and
+  `scripts/AuditEvents_CoveringIndex.sql`. The index now also covers `EmployeeId`/`ReasonCodeId` (not
+  just `DecisionId`/`ActionKey`), since the rollup's own aggregation needs both.

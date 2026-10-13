@@ -743,6 +743,114 @@ namespace DLPManagementSystem.Migrations
                     b.ToTable("AuditReasonCodes");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.DashboardEmployeeDailyRollup", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ActionKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("BucketDateUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DecisionId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("EventCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "OrganizationId", "BucketDateUtc" }, "IX_DashboardEmployeeDailyRollup_Org_Bucket");
+
+                    b.ToTable("DashboardEmployeeDailyRollups");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.DashboardHourlyRollup", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ActionKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("BucketStartUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DecisionId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("EventCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("LastOccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("LastReceivedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("ReasonCodeId")
+                        .HasColumnType("int");
+
+                    b.Property<byte>("TimeBasis")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "OrganizationId", "TimeBasis", "BucketStartUtc" }, "IX_DashboardHourlyRollup_Org_Basis_Bucket");
+
+                    b.ToTable("DashboardHourlyRollups");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.DashboardRollupWatermark", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RollupKind")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("LastComputedThroughUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("LastWideSweepUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("OrganizationId", "RollupKind");
+
+                    b.ToTable("DashboardRollupWatermarks");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.DemoRequest", b =>
                 {
                     b.Property<Guid>("Id")

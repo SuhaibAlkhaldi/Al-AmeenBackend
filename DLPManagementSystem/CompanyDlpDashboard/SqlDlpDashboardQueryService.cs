@@ -842,7 +842,7 @@ GROUP BY DATEDIFF(SECOND, @WeeklyFromUtc, ae.OccurredAtUtc) / 604800;
 
     // Pure in-memory scoring over the two risk result sets already read above — unchanged from the
     // pre-batching logic, just no longer interleaved with the SQL reads themselves.
-    private static (IReadOnlyList<DlpRiskUserDto> TopRiskyUsers, int HighRiskUserCount, IReadOnlyList<DlpDepartmentRiskDto> RiskByDepartment) ComputeRiskScores(
+    internal static (IReadOnlyList<DlpRiskUserDto> TopRiskyUsers, int HighRiskUserCount, IReadOnlyList<DlpDepartmentRiskDto> RiskByDepartment) ComputeRiskScores(
         List<(Guid EmployeeId, string DisplayName, string? DepartmentName, long BlockCount)> employeeRows,
         Dictionary<Guid, List<DlpRiskFactorDto>> factorsByEmployee)
     {
@@ -934,7 +934,7 @@ GROUP BY DATEDIFF(SECOND, @WeeklyFromUtc, ae.OccurredAtUtc) / 604800;
     // Extracted so GetKpisAsync (dashboard-split-endpoints) can concatenate this into the same
     // batch as the lean totals query - same SQL text either way, just text used verbatim or
     // embedded in a larger multi-statement command.
-    private static string BuildSeriesSql(bool hourly)
+    internal static string BuildSeriesSql(bool hourly)
     {
         var bucketUnit = hourly ? "HOUR" : "DAY";
 
@@ -954,7 +954,7 @@ WHERE ae.OrganizationId = @OrganizationId
 GROUP BY DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc AS datetime2)), 0);";
     }
 
-    private static async Task<Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto>> ReadSeriesRowsAsync(
+    internal static async Task<Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto>> ReadSeriesRowsAsync(
         SqlDataReader reader, CancellationToken cancellationToken)
     {
         var byBucket = new Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto>();
@@ -977,7 +977,7 @@ GROUP BY DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc A
         return byBucket;
     }
 
-    private static List<DlpDashboardSeriesPointDto> ZeroFillSeries(
+    internal static List<DlpDashboardSeriesPointDto> ZeroFillSeries(
         Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto> byBucket,
         bool hourly,
         DateTimeOffset from,
@@ -1163,43 +1163,43 @@ GROUP BY DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc A
         return value.Substring(0, maxLength) + "...";
     }
 
-    private static string GetString(SqlDataReader reader, string name)
+    internal static string GetString(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? string.Empty : reader.GetString(ordinal);
     }
 
-    private static string? GetNullableString(SqlDataReader reader, string name)
+    internal static string? GetNullableString(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
     }
 
-    private static long GetLong(SqlDataReader reader, string name)
+    internal static long GetLong(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? 0 : Convert.ToInt64(reader.GetValue(ordinal));
     }
 
-    private static long? GetNullableLong(SqlDataReader reader, string name)
+    internal static long? GetNullableLong(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? null : Convert.ToInt64(reader.GetValue(ordinal));
     }
 
-    private static int GetInt(SqlDataReader reader, string name)
+    internal static int GetInt(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? 0 : Convert.ToInt32(reader.GetValue(ordinal));
     }
 
-    private static DateTimeOffset GetDateTimeOffset(SqlDataReader reader, string name)
+    internal static DateTimeOffset GetDateTimeOffset(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.GetFieldValue<DateTimeOffset>(ordinal);
     }
 
-    private static DateTimeOffset? GetNullableDateTimeOffset(SqlDataReader reader, string name)
+    internal static DateTimeOffset? GetNullableDateTimeOffset(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateTimeOffset>(ordinal);

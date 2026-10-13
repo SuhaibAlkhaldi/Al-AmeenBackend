@@ -1,5 +1,6 @@
 using DLPManagementSystem.Authentication;
 using DLPManagementSystem.Authorization;
+using DLPManagementSystem.CompanyDlpDashboard.Rollup;
 using DLPManagementSystem.Data.Seed;
 using DLPManagementSystem.Helper.Email;
 using DLPManagementSystem.Helper.Health;
@@ -246,7 +247,18 @@ builder.Services.AddAuthorization();
 builder.Services.Configure<DlpDashboardOptions>(
     builder.Configuration.GetSection("DlpDashboard"));
 
-builder.Services.AddScoped<IDlpDashboardQueryService, SqlDlpDashboardQueryService>();
+// dashboard-rollup: SqlDlpDashboardQueryService (raw) stays registered under its own concrete
+// type (not IDlpDashboardQueryService) so RollupAwareDlpDashboardQueryService - the actual
+// IDlpDashboardQueryService every controller action resolves - can inject it directly alongside
+// IRollupDlpDashboardQueryService and choose between them per call based on
+// DashboardRollup:UseRollup. See DASHBOARD_ENDPOINTS.md's "Rollup" section.
+builder.Services.Configure<DashboardRollupOptions>(
+    builder.Configuration.GetSection("DashboardRollup"));
+builder.Services.AddScoped<SqlDlpDashboardQueryService>();
+builder.Services.AddScoped<IRollupDlpDashboardQueryService, RollupDlpDashboardQueryService>();
+builder.Services.AddScoped<IDashboardRollupRefreshService, DashboardRollupRefreshService>();
+builder.Services.AddScoped<IDlpDashboardQueryService, RollupAwareDlpDashboardQueryService>();
+builder.Services.AddHostedService<DashboardRollupRefreshWorker>();
 
 builder.Services.AddCors(options =>
 {
