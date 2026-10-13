@@ -110,7 +110,8 @@ namespace DLPManagementSystem.Service.Service
                     DefaultDecision = x.DefaultDecision.Name,
                     SupportsPermanentGrant = x.SupportsPermanentGrant,
                     SupportsTemporaryGrant = x.SupportsTemporaryGrant,
-                    SortOrder = x.SortOrder
+                    SortOrder = x.SortOrder,
+                    IsSensitive = x.IsSensitive
                 })
                 .ToListAsync(cancellationToken);
         }

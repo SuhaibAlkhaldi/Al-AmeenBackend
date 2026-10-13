@@ -16,6 +16,14 @@ namespace DLPManagementSystem.DTO.Alerts
 
         public string DeviceName { get; set; } = string.Empty;
 
+        // The triggering audit event's action category (e.g. "USB", "File", "Browser") - derived
+        // from PermissionAction.Category via AuditEvent.ActionKeyNavigation, the same lookup chain
+        // the dashboard's ChannelBreakdown already uses. Null only if the underlying ActionKey has
+        // somehow lost its category join (shouldn't happen in practice - PermissionAction.CategoryId
+        // is non-nullable - but mapped defensively since this crosses two more joins than the rest
+        // of this DTO).
+        public string? Category { get; set; }
+
         public string? EmployeeName { get; set; }
 
         public Guid? AssignedToUserId { get; set; }

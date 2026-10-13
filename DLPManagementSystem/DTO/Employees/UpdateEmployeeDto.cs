@@ -22,6 +22,9 @@ namespace DLPManagementSystem.DTO.Employees
         [StringLength(50)]
         public string? PhoneNumber { get; set; }
 
+        [StringLength(100)]
+        public string? JobTitle { get; set; }
+
         [Required]
         public int StatusId { get; set; }
     }

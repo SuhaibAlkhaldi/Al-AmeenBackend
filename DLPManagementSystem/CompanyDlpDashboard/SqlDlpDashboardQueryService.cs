@@ -271,6 +271,20 @@ WHERE d.OrganizationId = @OrganizationId;
 
         var (topRiskyUsers, highRiskUserCount, riskByDepartment) = ComputeRiskScores(employeeRows, factorsByEmployee);
 
+        // ui-data-batch3 additions (previous-period totals for the delta, and a time-bucketed series for
+        // the sparklines). They run as two small extra queries AFTER the batch above: the batch reader
+        // must be closed first (this connection does not use MARS), and both are OrganizationId-scoped
+        // exactly like the batch's own queries. Folding them into BatchSql as two more result sets would
+        // save two round trips - left as a possible follow-up, not needed for correctness.
+        await reader.CloseAsync();
+
+        // Same length as [from, to), immediately preceding it - e.g. for a 24h window this is "the
+        // 24h before that". Reuses the batch's own TotalsSql text against a shifted window.
+        var previousDuration = to - from;
+        var previousTotals = (await GetTotalsAsync(connection, organizationId, from - previousDuration, from, cancellationToken)).Totals;
+
+        var series = await GetSeriesAsync(connection, organizationId, from, to, cancellationToken);
+
         return new DlpDashboardSummaryDto(
             DateTimeOffset.UtcNow,
             from,
@@ -286,7 +300,9 @@ WHERE d.OrganizationId = @OrganizationId;
             topRiskyUsers,
             riskByDepartment,
             highRiskUserCount,
-            endpointAgents);
+            endpointAgents,
+            previousTotals,
+            series);
     }
 
     private static async Task<(DlpDashboardTotalsDto Totals, long? PolicyVersion)> ReadTotalsAsync(
@@ -542,6 +558,112 @@ WHERE d.OrganizationId = @OrganizationId;
             .ToList();
 
         return (topRiskyUsers, highRiskUserCount, riskByDepartment);
+    }
+
+    private static async Task<(DlpDashboardTotalsDto Totals, long? PolicyVersion)> GetTotalsAsync(
+        SqlConnection connection,
+        Guid organizationId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        // Same TotalsSql constant the batch uses (already OrganizationId-scoped), just run on its own
+        // against a different window, so the previous-period numbers can never drift from the current ones.
+        await using var command = CreateCommand(connection, TotalsSql, organizationId, from, to);
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
+        return await ReadTotalsAsync(reader, cancellationToken);
+    }
+
+    // Time-bucketed totals for the sparkline, aggregated entirely in SQL (GROUP BY on a
+    // DATEADD/DATEDIFF-floored bucket boundary) - never pulls one row per event into memory, only
+    // one row per bucket (at most 24 for a 6h/24h range, at most 7 for 168h/7d). Buckets with no
+    // events don't get a GROUP BY row at all, so they're zero-filled afterward from a small, bounded
+    // in-memory loop over the bucket boundaries themselves (not the events) - see the ui-data-batch3
+    // instruction's "decide where to zero-fill": doing it here means the frontend always receives a
+    // complete, contiguous series and never has to reconstruct missing buckets or guess boundaries
+    // itself. ae.ReceivedAtUtc is used because that's the column every other filter in this service
+    // (the batched TotalsSql, ChannelBreakdownSql, RecentEventsSql) already filters on - this
+    // series must bucket the same rows those totals count.
+    private static async Task<IReadOnlyList<DlpDashboardSeriesPointDto>> GetSeriesAsync(
+        SqlConnection connection,
+        Guid organizationId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        // Matches the three fixed presets the frontend actually sends - see dashboard.component.ts's
+        // hours signal (6h/24h -> hourly buckets, 168h/7d -> daily buckets) - generalized to "a range
+        // over 24h gets daily buckets" so any other range still gets a sane, bounded bucket count.
+        var hourly = to - from <= TimeSpan.FromHours(24);
+        var bucketUnit = hourly ? "HOUR" : "DAY";
+
+        var sql = $@"
+SELECT
+    DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc AS datetime2)), 0) AS BucketStart,
+    COUNT_BIG(1) AS Total,
+    SUM(CASE WHEN ad.Name = N'Allow' THEN 1 ELSE 0 END) AS Allowed,
+    SUM(CASE WHEN ad.Name = N'Block' THEN 1 ELSE 0 END) AS Blocked,
+    SUM(CASE WHEN ad.Name IN (N'AuditOnly', N'Audit') THEN 1 ELSE 0 END) AS AuditOnly,
+    SUM(CASE WHEN ad.Name = N'Error' THEN 1 ELSE 0 END) AS Errors
+FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+WHERE ae.OrganizationId = @OrganizationId
+  AND ae.ReceivedAtUtc >= @FromUtc
+  AND ae.ReceivedAtUtc < @ToUtc
+GROUP BY DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc AS datetime2)), 0);";
+
+        var byBucket = new Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto>();
+
+        await using (var command = CreateCommand(connection, sql, organizationId, from, to))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var bucketStart = new DateTimeOffset(
+                    DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("BucketStart")), DateTimeKind.Utc),
+                    TimeSpan.Zero);
+
+                byBucket[bucketStart] = new DlpDashboardSeriesPointDto(
+                    bucketStart,
+                    GetLong(reader, "Total"),
+                    GetLong(reader, "Blocked"),
+                    GetLong(reader, "Allowed"),
+                    GetLong(reader, "AuditOnly"),
+                    GetLong(reader, "Errors"));
+            }
+        }
+
+        var step = hourly ? TimeSpan.FromHours(1) : TimeSpan.FromDays(1);
+        var fromUtc = from.UtcDateTime;
+        var floorStart = hourly
+            ? new DateTime(fromUtc.Year, fromUtc.Month, fromUtc.Day, fromUtc.Hour, 0, 0, DateTimeKind.Utc)
+            : new DateTime(fromUtc.Year, fromUtc.Month, fromUtc.Day, 0, 0, 0, DateTimeKind.Utc);
+
+        var points = new List<DlpDashboardSeriesPointDto>();
+        for (var bucket = new DateTimeOffset(floorStart, TimeSpan.Zero); bucket < to; bucket += step)
+        {
+            points.Add(byBucket.TryGetValue(bucket, out var existing)
+                ? existing
+                : new DlpDashboardSeriesPointDto(bucket, 0, 0, 0, 0, 0));
+        }
+
+        return points;
+    }
+
+    private static SqlCommand CreateCommand(
+        SqlConnection connection,
+        string sql,
+        Guid organizationId,
+        DateTimeOffset from,
+        DateTimeOffset to)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = 30;
+        command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
+        command.Parameters.Add(new SqlParameter("@FromUtc", SqlDbType.DateTimeOffset) { Value = from });
+        command.Parameters.Add(new SqlParameter("@ToUtc", SqlDbType.DateTimeOffset) { Value = to });
+        return command;
     }
 
     private static string? BuildDetails(string? metadataJson)

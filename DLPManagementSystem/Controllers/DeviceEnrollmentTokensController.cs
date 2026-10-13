@@ -20,12 +20,13 @@ namespace DLPManagementSystem.Controllers
 
         [HttpGet]
         public async Task<IActionResult> GetTokens(
+            [FromQuery] string? status,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             CancellationToken cancellationToken = default)
         {
             var organizationId = User.GetOrganizationId();
-            var response = await _enrollmentTokenService.GetTokensAsync(organizationId, page, pageSize, cancellationToken);
+            var response = await _enrollmentTokenService.GetTokensAsync(organizationId, status, page, pageSize, cancellationToken);
             return Ok(response);
         }
 

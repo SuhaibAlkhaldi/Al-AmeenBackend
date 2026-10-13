@@ -273,10 +273,10 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionIfMissing("usb.mobile-device", "Usb", "USB Mobile Device", "Block or allow mobile/MTP USB devices.", "Deny", 110, ct);
 
             await AddPermissionActionIfMissing("file.encrypt", "File", "File Encrypt", "Allow or deny file encryption.", "Allow", 120, ct);
-            await AddPermissionActionIfMissing("file.decrypt", "File", "File Decrypt", "Allow or deny file decryption.", "Allow", 130, ct);
-            await AddPermissionActionIfMissing("file.print", "File", "File Print", "Block or allow printing of classified files.", "Deny", 135, ct);
-            await AddPermissionActionIfMissing(PermissionActionKeys.FileWatermarkDisable, "File", "Hide File Watermark", "Allows the tiled watermark stamped into a file's own content to be hidden, without affecting the small classification/device corner marker.", "Deny", 136, ct);
-            await AddPermissionActionIfMissing(PermissionActionKeys.FileOpenAccess, "File", "File Open Access", "Allows opening a file the employee did not create locally themselves (received via browser download or USB copy) - denied by default at every classification tier, including Public.", "Deny", 137, ct);
+            await AddPermissionActionIfMissing("file.decrypt", "File", "File Decrypt", "Allow or deny file decryption.", "Allow", 130, ct, isSensitive: true);
+            await AddPermissionActionIfMissing("file.print", "File", "File Print", "Block or allow printing of classified files.", "Deny", 135, ct, isSensitive: true);
+            await AddPermissionActionIfMissing(PermissionActionKeys.FileWatermarkDisable, "File", "Hide File Watermark", "Allows the tiled watermark stamped into a file's own content to be hidden, without affecting the small classification/device corner marker.", "Deny", 136, ct, isSensitive: true);
+            await AddPermissionActionIfMissing(PermissionActionKeys.FileOpenAccess, "File", "File Open Access", "Allows opening a file the employee did not create locally themselves (received via browser download or USB copy) - denied by default at every classification tier, including Public.", "Deny", 137, ct, isSensitive: true);
 
             await AddPermissionActionIfMissing("software.install", "Software", "Software Install", "Block or allow software installation.", "Deny", 140, ct);
             await AddPermissionActionIfMissing("software.execute-unapproved", "Software", "Execute Unapproved Software", "Block or allow unapproved software execution.", "Deny", 150, ct);
@@ -353,7 +353,14 @@ namespace DLPManagementSystem.Data.Seed
             string description,
             string defaultDecisionName,
             int sortOrder,
-            CancellationToken ct)
+            CancellationToken ct,
+            // Defaults false so every pre-existing call site is unaffected. Needed alongside
+            // AddIsSensitiveToPermissionActions's own migration-time UPDATE (see that migration and
+            // PermissionAction.IsSensitive) because this method runs AFTER migrations on every
+            // startup (Program.cs) - on a brand-new database the four sensitive actions don't exist
+            // yet when that UPDATE runs (it affects zero rows, harmlessly), so they'd otherwise be
+            // inserted here with IsSensitive defaulting to false.
+            bool isSensitive = false)
         {
             var exists = await _db.PermissionActions.AnyAsync(x => x.Key == key, ct);
 
@@ -378,7 +385,8 @@ namespace DLPManagementSystem.Data.Seed
                 SupportsPermanentGrant = true,
                 SupportsTemporaryGrant = true,
                 IsEnabled = true,
-                SortOrder = sortOrder
+                SortOrder = sortOrder,
+                IsSensitive = isSensitive
             });
         }
 

@@ -15,7 +15,20 @@ public sealed record DlpDashboardSummaryDto(
     IReadOnlyList<DlpRiskUserDto> TopRiskyUsers,
     IReadOnlyList<DlpDepartmentRiskDto> RiskByDepartment,
     int HighRiskUserCount,
-    DlpEndpointAgentStatusDto EndpointAgents);
+    DlpEndpointAgentStatusDto EndpointAgents,
+    // ui-data-batch3: Totals for the immediately preceding period of equal length
+    // ([FromUtc - (ToUtc - FromUtc), FromUtc)) - lets the frontend compute a %-change indicator
+    // next to each hero/activity card. Deliberately NOT computed for PermissionRequestCounts or
+    // EndpointAgents, both point-in-time snapshots ("pending right now", "% online right now") that
+    // a period-over-period delta wouldn't meaningfully describe. Optional/defaulted so this summary
+    // keeps deserializing fine for any client built against the pre-batch3 contract.
+    DlpDashboardTotalsDto? PreviousTotals = null,
+    // ui-data-batch3: Totals bucketed over time within [FromUtc, ToUtc) - one point per hour
+    // (6h/24h ranges) or per day (168h/7d range), SQL-side GROUP BY, zero-filled for buckets with no
+    // events (see SqlDlpDashboardQueryService.GetSeriesAsync for why zero-filling happens here and
+    // not on the frontend). Powers the small per-card sparkline. Optional/defaulted for the same
+    // backward-compatibility reason as PreviousTotals.
+    IReadOnlyList<DlpDashboardSeriesPointDto>? Series = null);
 
 public sealed record DlpPermissionRequestCountsDto(
     long Pending,
@@ -75,6 +88,16 @@ public sealed record DlpDashboardTotalsDto(
     long ErrorEvents,
     int UniqueActions,
     DateTimeOffset? LastReceivedAtUtc);
+
+// One zero-filled bucket of DlpDashboardSummaryDto.Series - see GetSeriesAsync. AuditOnly groups
+// the same "AuditOnly"/"Audit" decision names together as every other metric in this file does.
+public sealed record DlpDashboardSeriesPointDto(
+    DateTimeOffset BucketStartUtc,
+    long Total,
+    long Blocked,
+    long Allowed,
+    long AuditOnly,
+    long Errors);
 
 public sealed record DlpActionBreakdownItemDto(
     string ActionKey,
