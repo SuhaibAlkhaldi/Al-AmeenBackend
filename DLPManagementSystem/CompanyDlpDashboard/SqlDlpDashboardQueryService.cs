@@ -197,6 +197,331 @@ FROM dbo.Devices d
 WHERE d.OrganizationId = @OrganizationId;
 ";
 
+    // --- dashboard-split-endpoints additions below (new SQL text + new public methods only - the
+    // ten queries/consts above and GetSummaryAsync are untouched, so /summary's contract and
+    // behavior stay exactly as they were). Every split endpoint opens its own SqlConnection (no
+    // MARS configured on this connection string, so connections are never shared across endpoints)
+    // with a 15s CommandTimeout, per the dashboard-split-endpoints plan.
+
+    // Same shape as TotalsSql but without UniqueActions/PolicyVersion/LastReceivedAtUtc - unused by
+    // the /kpis frontend consumer and each one is itself extra aggregation work (a DISTINCT count
+    // and two MAX scans) this leaner query skips.
+    private const string TotalsLeanSql = @"
+SELECT
+    COUNT_BIG(1) AS TotalEvents,
+    SUM(CASE WHEN ad.Name = N'Allow' THEN 1 ELSE 0 END) AS AllowedEvents,
+    SUM(CASE WHEN ad.Name = N'Block' THEN 1 ELSE 0 END) AS BlockedEvents,
+    SUM(CASE WHEN ad.Name IN (N'AuditOnly', N'Audit') THEN 1 ELSE 0 END) AS AuditOnlyEvents,
+    SUM(CASE WHEN ad.Name = N'Error' THEN 1 ELSE 0 END) AS ErrorEvents
+FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+WHERE ae.OrganizationId = @OrganizationId
+  AND ae.ReceivedAtUtc >= @FromUtc
+  AND ae.ReceivedAtUtc < @ToUtc;
+";
+
+    // Same as ActionBreakdownSql/ReasonBreakdownSql but TOP 8 instead of 30/15 - /breakdown is a
+    // focused, standalone view rather than a feed into the bigger /summary payload.
+    private const string ActionBreakdownTop8Sql = @"
+SELECT TOP (8)
+    ae.ActionKey,
+    COUNT_BIG(1) AS Total,
+    SUM(CASE WHEN ad.Name = N'Allow' THEN 1 ELSE 0 END) AS Allowed,
+    SUM(CASE WHEN ad.Name = N'Block' THEN 1 ELSE 0 END) AS Blocked,
+    SUM(CASE WHEN ad.Name = N'Error' THEN 1 ELSE 0 END) AS Errors,
+    MAX(ae.ReceivedAtUtc) AS LastReceivedAtUtc
+FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+WHERE ae.OrganizationId = @OrganizationId
+  AND ae.ReceivedAtUtc >= @FromUtc
+  AND ae.ReceivedAtUtc < @ToUtc
+GROUP BY ae.ActionKey
+ORDER BY COUNT_BIG(1) DESC, ae.ActionKey ASC;
+";
+
+    private const string ReasonBreakdownTop8Sql = @"
+SELECT TOP (8)
+    COALESCE(arc.Code, N'Unknown') AS ReasonCode,
+    COUNT_BIG(1) AS Total
+FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditReasonCodes arc ON arc.Id = ae.ReasonCodeId
+WHERE ae.OrganizationId = @OrganizationId
+  AND ae.ReceivedAtUtc >= @FromUtc
+  AND ae.ReceivedAtUtc < @ToUtc
+GROUP BY COALESCE(arc.Code, N'Unknown')
+ORDER BY COUNT_BIG(1) DESC;
+";
+
+    // Same as RecentEventsSql but with a parameterized TOP and dbo.Devices.MachineName joined in
+    // for /recent-events's deviceName - LEFT JOIN so a since-deleted device still yields the row
+    // with DeviceName = null rather than dropping the event.
+    private const string RecentEventsWithDeviceSql = @"
+SELECT TOP (@Limit)
+    ae.ActionKey,
+    aet.DisplayName AS EventType,
+    ae.Username,
+    ae.UserSid,
+    CONVERT(nvarchar(50), ae.DeviceId) AS DeviceId,
+    d.MachineName AS DeviceName,
+    ae.MetadataJson,
+    ad.Name AS Decision,
+    arc.Code AS ReasonCode,
+    ae.PolicyVersion,
+    ae.OccurredAtUtc,
+    ae.ReceivedAtUtc
+FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditEventTypes aet ON aet.Id = ae.EventTypeId
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+LEFT JOIN dbo.AuditReasonCodes arc ON arc.Id = ae.ReasonCodeId
+LEFT JOIN dbo.Devices d ON d.Id = ae.DeviceId
+WHERE ae.OrganizationId = @OrganizationId
+  AND ae.ReceivedAtUtc >= @FromUtc
+  AND ae.ReceivedAtUtc < @ToUtc
+ORDER BY ae.ReceivedAtUtc DESC, ae.OccurredAtUtc DESC;
+";
+
+    // Replaces WeeklyTrendSql's "pull one row per event, bucket in memory" with a SQL-side GROUP BY
+    // - only ever 1-4 rows come back (one per 7-day bucket with any events) instead of every event
+    // in the 28-day window. WeekIndex buckets from @WeeklyFromUtc forward (0 = oldest week, 3 =
+    // most recent), so every bucket boundary is a half-open [start, end) match against the integer
+    // division with no off-by-one at the edges - see GetWeeklyTrendAsync for the inverse mapping
+    // back to each bucket's wall-clock start. BlockedCount = Block only; ViolationCount = Block +
+    // AuditOnly/Audit - same semantics as the pre-existing in-memory version (see
+    // DlpWeeklyTrendPointDto), verified equal to it by
+    // SqlDlpDashboardQueryServiceTests.GetWeeklyTrendAsync_MatchesSummarysExistingInMemoryAlgorithm.
+    private const string WeeklyTrendGroupedSql = @"
+SELECT
+    DATEDIFF(SECOND, @WeeklyFromUtc, ae.OccurredAtUtc) / 604800 AS WeekIndex,
+    SUM(CASE WHEN ad.Name = N'Block' THEN 1 ELSE 0 END) AS BlockedCount,
+    SUM(CASE WHEN ad.Name IN (N'Block', N'AuditOnly', N'Audit') THEN 1 ELSE 0 END) AS ViolationCount
+FROM dbo.AuditEvents ae
+LEFT JOIN dbo.AuditDecisions ad ON ad.Id = ae.DecisionId
+WHERE ae.OrganizationId = @OrganizationId
+  AND ae.OccurredAtUtc >= @WeeklyFromUtc
+  AND ae.OccurredAtUtc < @WeeklyToUtc
+GROUP BY DATEDIFF(SECOND, @WeeklyFromUtc, ae.OccurredAtUtc) / 604800;
+";
+
+    private const int SplitEndpointCommandTimeoutSeconds = 15;
+    private const int DefaultRecentEventsLimit = 10;
+    private const int MaxRecentEventsLimit = 20;
+
+    public async Task<DlpKpisDto> GetKpisAsync(
+        Guid organizationId,
+        DashboardRange range,
+        CancellationToken cancellationToken)
+    {
+        var from = range.FromUtc;
+        var to = range.ToUtc;
+        var hourly = to - from <= TimeSpan.FromHours(24);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        // Current totals + series share the exact same @OrganizationId/@FromUtc/@ToUtc values, so
+        // (unlike previous-totals below, which needs a shifted window under the same parameter
+        // names) they can run as one two-statement batch - one round trip instead of two.
+        DlpKpiTotalsDto currentTotals;
+        IReadOnlyList<DlpDashboardSeriesPointDto> series;
+        var batchSql = TotalsLeanSql + BuildSeriesSql(hourly);
+        await using (var command = CreateCommand(connection, batchSql, organizationId, from, to, SplitEndpointCommandTimeoutSeconds))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            currentTotals = await ReadLeanTotalsAsync(reader, cancellationToken);
+            await reader.NextResultAsync(cancellationToken);
+            var byBucket = await ReadSeriesRowsAsync(reader, cancellationToken);
+            series = ZeroFillSeries(byBucket, hourly, from, to);
+        }
+
+        // Same length as [from, to), immediately preceding it - matches GetSummaryAsync's own
+        // PreviousTotals semantics exactly, just against the lean totals shape.
+        var previousDuration = to - from;
+        var previousTotals = await GetLeanTotalsAsync(connection, organizationId, from - previousDuration, from, cancellationToken);
+
+        return new DlpKpisDto(range.Key, from, to, currentTotals, previousTotals, series);
+    }
+
+    public async Task<DlpDashboardStatusDto> GetStatusAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTimeOffset.UtcNow;
+        var freshSince = nowUtc.AddMinutes(-HeartbeatFreshMinutes);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = PermissionRequestCountsSql + EndpointAgentStatusSql;
+        command.CommandTimeout = SplitEndpointCommandTimeoutSeconds;
+        command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
+        command.Parameters.Add(new SqlParameter("@FreshSinceUtc", SqlDbType.DateTimeOffset) { Value = freshSince });
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var permissionRequestCounts = await ReadPermissionRequestCountsAsync(reader, cancellationToken);
+        await reader.NextResultAsync(cancellationToken);
+        var endpointAgents = await ReadEndpointAgentStatusAsync(reader, cancellationToken);
+
+        return new DlpDashboardStatusDto(permissionRequestCounts, endpointAgents);
+    }
+
+    public async Task<IReadOnlyList<DlpRecentAuditEventWithDeviceDto>> GetRecentEventsAsync(
+        Guid organizationId,
+        DashboardRange range,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var clampedLimit = Math.Clamp(limit <= 0 ? DefaultRecentEventsLimit : limit, 1, MaxRecentEventsLimit);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = RecentEventsWithDeviceSql;
+        command.CommandTimeout = SplitEndpointCommandTimeoutSeconds;
+        command.Parameters.Add(new SqlParameter("@Limit", SqlDbType.Int) { Value = clampedLimit });
+        command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
+        command.Parameters.Add(new SqlParameter("@FromUtc", SqlDbType.DateTimeOffset) { Value = range.FromUtc });
+        command.Parameters.Add(new SqlParameter("@ToUtc", SqlDbType.DateTimeOffset) { Value = range.ToUtc });
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<DlpRecentAuditEventWithDeviceDto>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var metadataJson = GetNullableString(reader, "MetadataJson");
+
+            result.Add(new DlpRecentAuditEventWithDeviceDto(
+                GetString(reader, "ActionKey"),
+                GetNullableString(reader, "EventType"),
+                GetNullableString(reader, "Username"),
+                GetNullableString(reader, "UserSid"),
+                GetNullableString(reader, "DeviceId"),
+                GetNullableString(reader, "DeviceName"),
+                DlpMetadataDetailsBuilder.Build(metadataJson),
+                GetNullableString(reader, "Decision"),
+                GetNullableString(reader, "ReasonCode"),
+                GetNullableLong(reader, "PolicyVersion"),
+                GetDateTimeOffset(reader, "OccurredAtUtc"),
+                GetDateTimeOffset(reader, "ReceivedAtUtc")));
+        }
+
+        return result;
+    }
+
+    public async Task<DlpBreakdownDto> GetBreakdownAsync(
+        Guid organizationId,
+        DashboardRange range,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var batchSql = ActionBreakdownTop8Sql + ReasonBreakdownTop8Sql + ChannelBreakdownSql;
+        await using var command = CreateCommand(connection, batchSql, organizationId, range.FromUtc, range.ToUtc, SplitEndpointCommandTimeoutSeconds);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var actionBreakdown = await ReadActionBreakdownAsync(reader, cancellationToken);
+        await reader.NextResultAsync(cancellationToken);
+        var reasonBreakdown = await ReadReasonBreakdownAsync(reader, cancellationToken);
+        await reader.NextResultAsync(cancellationToken);
+        var channelBreakdown = await ReadChannelBreakdownAsync(reader, cancellationToken);
+
+        return new DlpBreakdownDto(actionBreakdown, reasonBreakdown, channelBreakdown);
+    }
+
+    public async Task<DlpRiskDto> GetRiskAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTimeOffset.UtcNow;
+        var riskFrom = nowUtc.AddDays(-RiskWindowDays);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = RiskBlockCountSql + RiskFactorSql;
+        command.CommandTimeout = SplitEndpointCommandTimeoutSeconds;
+        command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
+        command.Parameters.Add(new SqlParameter("@RiskFromUtc", SqlDbType.DateTimeOffset) { Value = riskFrom });
+        command.Parameters.Add(new SqlParameter("@RiskToUtc", SqlDbType.DateTimeOffset) { Value = nowUtc });
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var employeeRows = await ReadRiskBlockCountsAsync(reader, cancellationToken);
+        await reader.NextResultAsync(cancellationToken);
+        var factorsByEmployee = await ReadRiskFactorsAsync(reader, cancellationToken);
+
+        var (topRiskyUsers, highRiskUserCount, riskByDepartment) = ComputeRiskScores(employeeRows, factorsByEmployee);
+
+        return new DlpRiskDto(topRiskyUsers, riskByDepartment, highRiskUserCount);
+    }
+
+    public async Task<IReadOnlyList<DlpWeeklyTrendPointDto>> GetWeeklyTrendAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTimeOffset.UtcNow;
+        var weeklyFrom = nowUtc.AddDays(-28);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = WeeklyTrendGroupedSql;
+        command.CommandTimeout = SplitEndpointCommandTimeoutSeconds;
+        command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
+        command.Parameters.Add(new SqlParameter("@WeeklyFromUtc", SqlDbType.DateTimeOffset) { Value = weeklyFrom });
+        command.Parameters.Add(new SqlParameter("@WeeklyToUtc", SqlDbType.DateTimeOffset) { Value = nowUtc });
+
+        var byWeekIndex = new Dictionary<int, (long Blocked, long Violations)>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var weekIndex = GetInt(reader, "WeekIndex");
+                byWeekIndex[weekIndex] = (GetLong(reader, "BlockedCount"), GetLong(reader, "ViolationCount"));
+            }
+        }
+
+        var points = new List<DlpWeeklyTrendPointDto>();
+        for (var weekIndex = 0; weekIndex < 4; weekIndex++)
+        {
+            var bucketStart = weeklyFrom.AddDays(7 * weekIndex);
+            var (blocked, violations) = byWeekIndex.TryGetValue(weekIndex, out var counts) ? counts : (0, 0);
+            points.Add(new DlpWeeklyTrendPointDto(bucketStart, blocked, violations));
+        }
+
+        return points;
+    }
+
+    private static async Task<DlpKpiTotalsDto> ReadLeanTotalsAsync(SqlDataReader reader, CancellationToken cancellationToken)
+    {
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new DlpKpiTotalsDto(0, 0, 0, 0, 0);
+        }
+
+        return new DlpKpiTotalsDto(
+            GetLong(reader, "TotalEvents"),
+            GetLong(reader, "AllowedEvents"),
+            GetLong(reader, "BlockedEvents"),
+            GetLong(reader, "AuditOnlyEvents"),
+            GetLong(reader, "ErrorEvents"));
+    }
+
+    private static async Task<DlpKpiTotalsDto> GetLeanTotalsAsync(
+        SqlConnection connection,
+        Guid organizationId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand(connection, TotalsLeanSql, organizationId, from, to, SplitEndpointCommandTimeoutSeconds);
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
+        return await ReadLeanTotalsAsync(reader, cancellationToken);
+    }
+
     private const string BatchSql =
         TotalsSql + ActionBreakdownSql + ReasonBreakdownSql + RecentEventsSql + ChannelBreakdownSql +
         WeeklyTrendSql + PermissionRequestCountsSql + RiskBlockCountSql + RiskFactorSql + EndpointAgentStatusSql;
@@ -517,7 +842,7 @@ WHERE d.OrganizationId = @OrganizationId;
 
     // Pure in-memory scoring over the two risk result sets already read above — unchanged from the
     // pre-batching logic, just no longer interleaved with the SQL reads themselves.
-    private static (IReadOnlyList<DlpRiskUserDto> TopRiskyUsers, int HighRiskUserCount, IReadOnlyList<DlpDepartmentRiskDto> RiskByDepartment) ComputeRiskScores(
+    internal static (IReadOnlyList<DlpRiskUserDto> TopRiskyUsers, int HighRiskUserCount, IReadOnlyList<DlpDepartmentRiskDto> RiskByDepartment) ComputeRiskScores(
         List<(Guid EmployeeId, string DisplayName, string? DepartmentName, long BlockCount)> employeeRows,
         Dictionary<Guid, List<DlpRiskFactorDto>> factorsByEmployee)
     {
@@ -595,9 +920,25 @@ WHERE d.OrganizationId = @OrganizationId;
         // hours signal (6h/24h -> hourly buckets, 168h/7d -> daily buckets) - generalized to "a range
         // over 24h gets daily buckets" so any other range still gets a sane, bounded bucket count.
         var hourly = to - from <= TimeSpan.FromHours(24);
+
+        Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto> byBucket;
+        await using (var command = CreateCommand(connection, BuildSeriesSql(hourly), organizationId, from, to))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            byBucket = await ReadSeriesRowsAsync(reader, cancellationToken);
+        }
+
+        return ZeroFillSeries(byBucket, hourly, from, to);
+    }
+
+    // Extracted so GetKpisAsync (dashboard-split-endpoints) can concatenate this into the same
+    // batch as the lean totals query - same SQL text either way, just text used verbatim or
+    // embedded in a larger multi-statement command.
+    internal static string BuildSeriesSql(bool hourly)
+    {
         var bucketUnit = hourly ? "HOUR" : "DAY";
 
-        var sql = $@"
+        return $@"
 SELECT
     DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc AS datetime2)), 0) AS BucketStart,
     COUNT_BIG(1) AS Total,
@@ -611,28 +952,37 @@ WHERE ae.OrganizationId = @OrganizationId
   AND ae.ReceivedAtUtc >= @FromUtc
   AND ae.ReceivedAtUtc < @ToUtc
 GROUP BY DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc AS datetime2)), 0);";
+    }
 
+    internal static async Task<Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto>> ReadSeriesRowsAsync(
+        SqlDataReader reader, CancellationToken cancellationToken)
+    {
         var byBucket = new Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto>();
 
-        await using (var command = CreateCommand(connection, sql, organizationId, from, to))
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        while (await reader.ReadAsync(cancellationToken))
         {
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                var bucketStart = new DateTimeOffset(
-                    DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("BucketStart")), DateTimeKind.Utc),
-                    TimeSpan.Zero);
+            var bucketStart = new DateTimeOffset(
+                DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("BucketStart")), DateTimeKind.Utc),
+                TimeSpan.Zero);
 
-                byBucket[bucketStart] = new DlpDashboardSeriesPointDto(
-                    bucketStart,
-                    GetLong(reader, "Total"),
-                    GetLong(reader, "Blocked"),
-                    GetLong(reader, "Allowed"),
-                    GetLong(reader, "AuditOnly"),
-                    GetLong(reader, "Errors"));
-            }
+            byBucket[bucketStart] = new DlpDashboardSeriesPointDto(
+                bucketStart,
+                GetLong(reader, "Total"),
+                GetLong(reader, "Blocked"),
+                GetLong(reader, "Allowed"),
+                GetLong(reader, "AuditOnly"),
+                GetLong(reader, "Errors"));
         }
 
+        return byBucket;
+    }
+
+    internal static List<DlpDashboardSeriesPointDto> ZeroFillSeries(
+        Dictionary<DateTimeOffset, DlpDashboardSeriesPointDto> byBucket,
+        bool hourly,
+        DateTimeOffset from,
+        DateTimeOffset to)
+    {
         var step = hourly ? TimeSpan.FromHours(1) : TimeSpan.FromDays(1);
         var fromUtc = from.UtcDateTime;
         var floorStart = hourly
@@ -655,11 +1005,12 @@ GROUP BY DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc A
         string sql,
         Guid organizationId,
         DateTimeOffset from,
-        DateTimeOffset to)
+        DateTimeOffset to,
+        int commandTimeoutSeconds = 30)
     {
         var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.CommandTimeout = 30;
+        command.CommandTimeout = commandTimeoutSeconds;
         command.Parameters.Add(new SqlParameter("@OrganizationId", SqlDbType.UniqueIdentifier) { Value = organizationId });
         command.Parameters.Add(new SqlParameter("@FromUtc", SqlDbType.DateTimeOffset) { Value = from });
         command.Parameters.Add(new SqlParameter("@ToUtc", SqlDbType.DateTimeOffset) { Value = to });
@@ -812,43 +1163,43 @@ GROUP BY DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, CAST(ae.ReceivedAtUtc A
         return value.Substring(0, maxLength) + "...";
     }
 
-    private static string GetString(SqlDataReader reader, string name)
+    internal static string GetString(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? string.Empty : reader.GetString(ordinal);
     }
 
-    private static string? GetNullableString(SqlDataReader reader, string name)
+    internal static string? GetNullableString(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
     }
 
-    private static long GetLong(SqlDataReader reader, string name)
+    internal static long GetLong(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? 0 : Convert.ToInt64(reader.GetValue(ordinal));
     }
 
-    private static long? GetNullableLong(SqlDataReader reader, string name)
+    internal static long? GetNullableLong(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? null : Convert.ToInt64(reader.GetValue(ordinal));
     }
 
-    private static int GetInt(SqlDataReader reader, string name)
+    internal static int GetInt(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? 0 : Convert.ToInt32(reader.GetValue(ordinal));
     }
 
-    private static DateTimeOffset GetDateTimeOffset(SqlDataReader reader, string name)
+    internal static DateTimeOffset GetDateTimeOffset(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.GetFieldValue<DateTimeOffset>(ordinal);
     }
 
-    private static DateTimeOffset? GetNullableDateTimeOffset(SqlDataReader reader, string name)
+    internal static DateTimeOffset? GetNullableDateTimeOffset(SqlDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateTimeOffset>(ordinal);

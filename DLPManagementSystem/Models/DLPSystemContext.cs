@@ -47,6 +47,12 @@ public partial class DLPSystemContext : DbContext
 
     public virtual DbSet<AuditReasonCode> AuditReasonCodes { get; set; }
 
+    public virtual DbSet<DashboardEmployeeDailyRollup> DashboardEmployeeDailyRollups { get; set; }
+
+    public virtual DbSet<DashboardHourlyRollup> DashboardHourlyRollups { get; set; }
+
+    public virtual DbSet<DashboardRollupWatermark> DashboardRollupWatermarks { get; set; }
+
     public virtual DbSet<Department> Departments { get; set; }
 
     public virtual DbSet<DictionaryRule> DictionaryRules { get; set; }
