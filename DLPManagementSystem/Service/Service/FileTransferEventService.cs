@@ -25,14 +25,20 @@ namespace DLPManagementSystem.Service.Service
         // a browser tab. TEAMS_DESKTOP (Phase 8) is the new Microsoft Teams desktop app's own CDP-based observer,
         // reusing the exact same CHAT_NAME/TEAMS_CHAT_NAME pairing as TEAMS since it reads the identical
         // teams.microsoft.com/teams.live.com DOM, just from inside that app's WebView2 instead of a browser tab.
-        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP", "YAHOO", "TELEGRAM", "WHATSAPP_DESKTOP", "TEAMS_DESKTOP" };
+        // OUTLOOK_GRAPH (Phase 8) is not DOM-based at all - every CDP/UIA approach that works for the other
+        // desktop channels hit a dead end for "new Outlook for Windows" (confirmed live 2026-10-13), so this
+        // observer instead polls the signed-in user's own Sent Items via Microsoft Graph after a message has
+        // actually been sent. That is strictly stronger evidence than "the send button was clicked" (every
+        // other EMAIL-kind channel's EMAIL_IN_SEND_FORM), so it gets its own evidence type rather than reusing
+        // that one, and it is the first channel that can see a Bcc recipient at all - hence "BCC" here.
+        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP", "YAHOO", "TELEGRAM", "WHATSAPP_DESKTOP", "TEAMS_DESKTOP", "OUTLOOK_GRAPH" };
         private static readonly HashSet<string> AllowedRecipientKinds = new(StringComparer.Ordinal) { "EMAIL", "CHAT_NAME", "GROUP_NAME", "UNKNOWN" };
-        private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal) { "TO", "CC" };
+        private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal) { "TO", "CC", "BCC" };
 
         // An observation is only believable if its recipient evidence type belongs to its recipient kind.
         private static readonly Dictionary<string, HashSet<string>> EvidenceByKind = new(StringComparer.Ordinal)
         {
-            ["EMAIL"] = new(StringComparer.Ordinal) { FileTransferEvidenceRules.RecipientEvidence_EmailInSendForm, FileTransferEvidenceRules.RecipientEvidence_EmailPartialRead },
+            ["EMAIL"] = new(StringComparer.Ordinal) { FileTransferEvidenceRules.RecipientEvidence_EmailInSendForm, FileTransferEvidenceRules.RecipientEvidence_EmailPartialRead, FileTransferEvidenceRules.RecipientEvidence_EmailSentConfirmed },
             ["CHAT_NAME"] = new(StringComparer.Ordinal) { FileTransferEvidenceRules.RecipientEvidence_TeamsChatName, FileTransferEvidenceRules.RecipientEvidence_ChatContactName },
             ["GROUP_NAME"] = new(StringComparer.Ordinal) { FileTransferEvidenceRules.RecipientEvidence_GroupName }
         };

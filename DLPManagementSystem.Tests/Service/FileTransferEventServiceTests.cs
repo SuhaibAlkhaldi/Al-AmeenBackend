@@ -268,6 +268,29 @@ namespace DLPManagementSystem.Tests.Service
         }
 
         [Fact]
+        public async Task OutlookGraphBccRecipient_IsAccepted_WithHighRecipientLevel()
+        {
+            // Phase 8: OUTLOOK_GRAPH reads the sender's own Sent Items via Microsoft Graph after the message
+            // was actually accepted for delivery - stronger evidence than EMAIL_IN_SEND_FORM, its own evidence
+            // type, and the first channel able to see a Bcc recipient at all (no DOM/UI channel ever could).
+            var outlookGraph = Observation(recipient: "hidden@example.com");
+            outlookGraph.Channel = "OUTLOOK_GRAPH";
+            outlookGraph.RecipientRole = "BCC";
+            outlookGraph.RecipientEvidenceType = "EMAIL_SENT_CONFIRMED";
+
+            var response = await IngestAsync(DeviceA, OrgA, outlookGraph);
+
+            Assert.Equal(1, response.Data!.Accepted);
+            var stored = await _db.FileTransferEvents.AsNoTracking().SingleAsync();
+            Assert.Equal("OUTLOOK_GRAPH", stored.Channel);
+            Assert.Equal("BCC", stored.RecipientRole);
+            Assert.Equal("hidden@example.com", stored.RecipientValue);
+            Assert.Equal("HIGH", stored.FileEvidenceLevel);
+            Assert.Equal("HIGH", stored.RecipientEvidenceLevel);
+            Assert.Equal("HIGH", stored.OverallEvidenceLevel);
+        }
+
+        [Fact]
         public async Task RecipientAddress_IsStoredNormalized()
         {
             await IngestAsync(DeviceA, OrgA, Observation(recipient: "  Consultant@Example.COM "));

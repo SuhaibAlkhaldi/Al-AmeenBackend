@@ -25,6 +25,11 @@ namespace DLPManagementSystem.Helper.FileTransfer
 
         public const string RecipientEvidence_EmailInSendForm = "EMAIL_IN_SEND_FORM";
         public const string RecipientEvidence_EmailPartialRead = "EMAIL_PARTIAL_READ";
+        // Read from the sender's own Sent Items via Microsoft Graph after Outlook/Exchange has actually
+        // accepted the message for delivery - stronger than EmailInSendForm (which only means the send
+        // button was clicked, not that anything was confirmed sent), so it is its own evidence type even
+        // though both currently map to the same Level_High ceiling.
+        public const string RecipientEvidence_EmailSentConfirmed = "EMAIL_SENT_CONFIRMED";
         public const string RecipientEvidence_TeamsChatName = "TEAMS_CHAT_NAME";
         public const string RecipientEvidence_ChatContactName = "CHAT_CONTACT_NAME";
         public const string RecipientEvidence_GroupName = "GROUP_NAME";
@@ -50,6 +55,7 @@ namespace DLPManagementSystem.Helper.FileTransfer
         public static string RecipientLevel(string recipientEvidence) => recipientEvidence switch
         {
             RecipientEvidence_EmailInSendForm => Level_High,
+            RecipientEvidence_EmailSentConfirmed => Level_High,
             RecipientEvidence_EmailPartialRead => Level_Medium,
             RecipientEvidence_TeamsChatName => Level_Medium,
             RecipientEvidence_ChatContactName => Level_Low,
