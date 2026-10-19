@@ -10,7 +10,9 @@ namespace DLPManagementSystem.Service.Service
 {
     public class AgentEnrollmentService : IAgentEnrollmentService
     {
-        private static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromDays(180);
+        // Long-lived by design - manual revoke via the admin portal (DeviceService.DeleteDeviceAsync /
+        // device revoke) is the real security control here, not time-based expiry.
+        private static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromDays(1825);
 
         private readonly DLPSystemContext _db;
         private readonly ILogger<AgentEnrollmentService> _logger;
