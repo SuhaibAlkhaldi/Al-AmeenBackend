@@ -77,37 +77,67 @@ namespace DLPManagementSystem.Service.Service
                         "حالة الجهاز Active غير موجودة في قاعدة البيانات");
                 }
 
-                var deviceAlreadyExists = await _db.Devices
-                    .AnyAsync(x => x.Id == request.DeviceId, cancellationToken);
+                var existingDevice = await _db.Devices
+                    .Include(x => x.Status)
+                    .FirstOrDefaultAsync(x => x.Id == request.DeviceId, cancellationToken);
 
-                if (deviceAlreadyExists)
+                // A device that was properly uninstalled (see AgentEnrollmentService.Unenroll /
+                // DeviceService.DeleteDeviceAsync) is left as "Retired", not deleted - so the exact same
+                // DeviceId (persisted client-side in identity.json, which uninstall intentionally never
+                // erases) can legitimately come back and re-enroll. Anything else with this same Id -
+                // still Active/Disabled/Lost/PendingEnrollment, or Retired under a DIFFERENT organization
+                // (Device.Id is a client-supplied GUID, not org-scoped at the DB level, so this guards
+                // against silently reassigning another tenant's device history) - is a real conflict and
+                // keeps today's rejection.
+                var canReactivate = existingDevice != null
+                    && existingDevice.OrganizationId == enrollmentToken.OrganizationId
+                    && existingDevice.Status.Name == "Retired";
+
+                if (existingDevice != null && !canReactivate)
                 {
                     return ApiResponse<AgentEnrollResponseDto>.FailureResponse(
                         $"Device '{request.DeviceId}' is already enrolled.",
                         "هذا الجهاز مسجل مسبقًا");
                 }
 
-                var device = new Device
+                Device device;
+                if (existingDevice == null)
                 {
-                    Id = request.DeviceId,
-                    OrganizationId = enrollmentToken.OrganizationId,
-                    DeviceKey = request.DeviceId.ToString("D"),
-                    MachineName = request.MachineName,
-                    AgentVersion = request.AgentVersion,
-                    StatusId = activeDeviceStatus.Id,
-                    EnrolledAtUtc = nowUtc,
-                    LastSeenAtUtc = nowUtc,
-                    CurrentPolicyVersion = 0,
-                    CreatedAtUtc = nowUtc,
-                    UpdatedAtUtc = nowUtc
-                };
+                    device = new Device
+                    {
+                        Id = request.DeviceId,
+                        OrganizationId = enrollmentToken.OrganizationId,
+                        DeviceKey = request.DeviceId.ToString("D"),
+                        MachineName = request.MachineName,
+                        AgentVersion = request.AgentVersion,
+                        StatusId = activeDeviceStatus.Id,
+                        EnrolledAtUtc = nowUtc,
+                        LastSeenAtUtc = nowUtc,
+                        CurrentPolicyVersion = 0,
+                        CreatedAtUtc = nowUtc,
+                        UpdatedAtUtc = nowUtc
+                    };
 
-                _db.Devices.Add(device);
+                    _db.Devices.Add(device);
+                }
+                else
+                {
+                    device = existingDevice;
+                    device.MachineName = request.MachineName;
+                    device.AgentVersion = request.AgentVersion;
+                    device.StatusId = activeDeviceStatus.Id;
+                    device.EnrolledAtUtc = nowUtc;
+                    device.LastSeenAtUtc = nowUtc;
+                    device.UpdatedAtUtc = nowUtc;
+                }
 
                 enrollmentToken.UsedCount += 1;
 
                 await _db.SaveChangesAsync(cancellationToken);
 
+                // Runs for both branches - a no-op for a brand-new device (a fresh GUID can't already
+                // have credentials), and the actual point for a reactivated one (revokes whatever
+                // credential it held before it was retired).
                 var previousCredentials = await _db.DeviceCredentials
                     .Where(x => x.DeviceId == device.Id && x.RevokedAtUtc == null)
                     .ToListAsync(cancellationToken);
@@ -155,6 +185,73 @@ namespace DLPManagementSystem.Service.Service
                 return ApiResponse<AgentEnrollResponseDto>.FailureResponse(
                     "Unexpected error occurred while enrolling agent.",
                     "حدث خطأ غير متوقع أثناء تسجيل الجهاز");
+            }
+        }
+
+        public async Task<ApiResponse<AgentUnenrollResponseDto>> Unenroll(
+            Guid organizationId, Guid deviceId, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var device = await _db.Devices
+                    .Include(x => x.Status)
+                    .FirstOrDefaultAsync(x => x.Id == deviceId && x.OrganizationId == organizationId, cancellationToken);
+
+                if (device == null)
+                {
+                    return ApiResponse<AgentUnenrollResponseDto>.FailureResponse(
+                        "Device was not found.",
+                        "الجهاز غير موجود");
+                }
+
+                // Idempotent - uninstall may be re-run (e.g. the first attempt reached the backend but
+                // the agent never saw the response before the process was torn down), so an
+                // already-Retired device is a success, not an error.
+                if (!device.Status.Name.Equals("Retired", StringComparison.OrdinalIgnoreCase))
+                {
+                    var retiredStatus = await _db.DeviceStatuses
+                        .FirstOrDefaultAsync(x => x.Name == "Retired", cancellationToken);
+
+                    if (retiredStatus == null)
+                    {
+                        return ApiResponse<AgentUnenrollResponseDto>.FailureResponse(
+                            "Retired device status is not configured.",
+                            "حالة الإيقاف غير مهيأة");
+                    }
+
+                    var nowUtc = DateTimeOffset.UtcNow;
+                    device.StatusId = retiredStatus.Id;
+                    device.UpdatedAtUtc = nowUtc;
+
+                    var activeCredentials = await _db.DeviceCredentials
+                        .Where(x => x.DeviceId == device.Id && x.RevokedAtUtc == null)
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var activeCredential in activeCredentials)
+                    {
+                        activeCredential.RevokedAtUtc = nowUtc;
+                    }
+
+                    await _db.SaveChangesAsync(cancellationToken);
+
+                    _logger.LogInformation(
+                        "Device {DeviceId} for organization {OrganizationId} was unenrolled (retired) by the agent.",
+                        deviceId, organizationId);
+                }
+
+                return ApiResponse<AgentUnenrollResponseDto>.SuccessResponse(
+                    new AgentUnenrollResponseDto { Unenrolled = true },
+                    "Device unenrolled successfully.",
+                    "تم إلغاء تسجيل الجهاز بنجاح");
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception,
+                    "Unexpected error while unenrolling device {DeviceId} for organization {OrganizationId}.",
+                    deviceId, organizationId);
+                return ApiResponse<AgentUnenrollResponseDto>.FailureResponse(
+                    "Unexpected error occurred while unenrolling agent.",
+                    "حدث خطأ غير متوقع أثناء إلغاء تسجيل الجهاز");
             }
         }
 

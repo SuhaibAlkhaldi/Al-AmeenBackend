@@ -172,8 +172,21 @@ namespace DLPManagementSystem.Service.Service
                 return ApiResponse<bool>.FailureResponse("Retired device status is not configured.", "حالة الإيقاف غير مهيأة");
             }
 
+            var nowUtc = DateTimeOffset.UtcNow;
             device.StatusId = retiredStatus.Id;
-            device.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            device.UpdatedAtUtc = nowUtc;
+
+            // Same credential-hygiene step AgentEnrollmentService.Unenroll performs for a self-initiated
+            // retire - DeviceBearerAuthenticationHandler's Active-status check already blocks these
+            // either way, but an unrevoked row surviving a retirement is still worth closing here too.
+            var activeCredentials = await _db.DeviceCredentials
+                .Where(x => x.DeviceId == device.Id && x.RevokedAtUtc == null)
+                .ToListAsync(cancellationToken);
+
+            foreach (var activeCredential in activeCredentials)
+            {
+                activeCredential.RevokedAtUtc = nowUtc;
+            }
 
             await _adminAuditLogService.LogAsync(
                 organizationId, callerUserId, "DeviceRetired", "Device", device.Id, device.MachineName,
