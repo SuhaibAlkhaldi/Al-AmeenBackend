@@ -130,19 +130,27 @@ namespace DLPManagementSystem.Service.Service
                 _ => await ResolveEmployeeBySidAsync(organizationId, activeAssignedEmployeeIds, userSid, cancellationToken)
             };
 
-            if (resolvedEmployeeId == null)
-            {
-                return new List<AgentPermissionGrantDto>();
-            }
+            // Deliberately NOT an early-return when no employee is resolved: Organization- and
+            // Device-scoped grants (added below) apply to this device regardless of whether anyone is
+            // currently assigned to it - only the Employee leg needs a resolved employee at all.
+            var employeeIdString = resolvedEmployeeId?.ToString();
+            var deviceIdString = deviceId.ToString();
 
-            var employeeIdString = resolvedEmployeeId.Value.ToString();
-
+            // Three subject kinds can all apply to this one device simultaneously - a pre-existing
+            // latent gap (confirmed live: only the Employee leg below existed until this fix), not
+            // something introduced by any one feature. An Organization-scoped grant has no subject
+            // filter beyond the org itself; a Device-scoped grant matches this device's own id as
+            // SubjectId (see PermissionGrantService.ResolveSubjectAsync's "Device" case). The agent
+            // never needs to know which of the three produced a given grant - all three map to the
+            // exact same AgentPermissionGrantDto shape below.
             var candidates = await _db.PermissionGrants
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId
-                    && x.SubjectType.Name == "Employee"
-                    && x.SubjectId == employeeIdString
-                    && (x.TargetDeviceId == null || x.TargetDeviceId == deviceId))
+                    && (
+                        (employeeIdString != null && x.SubjectType.Name == "Employee" && x.SubjectId == employeeIdString && (x.TargetDeviceId == null || x.TargetDeviceId == deviceId))
+                        || (x.SubjectType.Name == "Organization")
+                        || (x.SubjectType.Name == "Device" && x.SubjectId == deviceIdString)
+                    ))
                 .Select(x => new
                 {
                     x.Id,

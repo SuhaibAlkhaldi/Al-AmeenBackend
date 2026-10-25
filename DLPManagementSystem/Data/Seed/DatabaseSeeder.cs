@@ -191,6 +191,7 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionCategoryIfMissing(6, "Software", "Software", ct);
             await AddPermissionActionCategoryIfMissing(7, "System", "System", ct);
             await AddPermissionActionCategoryIfMissing(8, "Cli", "Command Line", ct);
+            await AddPermissionActionCategoryIfMissing(9, "Extensions", "Browser Extensions", ct);
         }
 
         private async Task AddPermissionDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
@@ -300,6 +301,12 @@ namespace DLPManagementSystem.Data.Seed
             // ActionKeys.CliSensitiveCommand on the agent side); kept Allow because there is
             // genuinely no restriction tied to this key.
             await AddPermissionActionIfMissing(PermissionActionKeys.CliSensitiveCommand, "Cli", "Sensitive CLI Command Detected", "Audit-only: flags command-line content matching exfiltration/attack patterns, independent of the CLI Execution decision.", "Allow", 190, ct);
+
+            // Fixed bypass action for browser extensions - see PermissionActionKeys.ExtensionUnrestricted.
+            // Individual "approve extension <id>" actions are NOT seeded here - they're created
+            // on-demand (PermissionGrantService's get-or-create) the first time any employee requests
+            // or an admin directly grants a specific extension ID, since that set is arbitrary/unbounded.
+            await AddPermissionActionIfMissing(PermissionActionKeys.ExtensionUnrestricted, "Extensions", "Unrestricted Extension Installs", "Allows installing any browser extension, bypassing the organization's extension allowlist entirely, for this employee/device/organization.", "Deny", 200, ct);
         }
 
         private async Task ConfigureWatermarkActionsAsync(CancellationToken ct)

@@ -318,6 +318,21 @@ namespace DLPManagementSystem.Service.Service
             var actionExists = await _db.PermissionActions
                 .AnyAsync(x => x.Key == request.ActionKey && x.IsEnabled, cancellationToken);
 
+            if (!actionExists && request.ActionKey.StartsWith(PermissionActionKeys.ExtensionActionKeyPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var extensionId = request.ActionKey[PermissionActionKeys.ExtensionActionKeyPrefix.Length..];
+
+                if (!ExtensionActionProvisioner.IsValidExtensionId(extensionId))
+                {
+                    return ApiResponse<PermissionRequestDto>.FailureResponse(
+                        "Extension id must be exactly 32 lowercase letters (a-p), matching the Chrome/Edge Web Store id format.",
+                        "معرّف الإضافة يجب أن يكون 32 حرفًا صغيرًا (a-p) بالضبط، بنفس صيغة متجر Chrome/Edge");
+                }
+
+                await ExtensionActionProvisioner.EnsureActionExistsAsync(_db, extensionId, cancellationToken);
+                actionExists = true;
+            }
+
             if (!actionExists)
             {
                 return ApiResponse<PermissionRequestDto>.FailureResponse("Permission action was not found.", "إجراء الصلاحية غير موجود");
@@ -561,15 +576,39 @@ namespace DLPManagementSystem.Service.Service
                 ? request.GrantType
                 : permissionRequest.RequestedGrantType.Name;
 
+            // Default: approve exactly as requested (the employee who submitted it). An admin may
+            // instead redirect the resulting grant's scope - e.g. to the whole Organization - via
+            // ReviewPermissionRequestDto.SubjectTypeOverride, resolved through the same
+            // Employee/Device/Organization validation the admin direct-grant path uses.
+            int grantSubjectTypeId = permissionRequest.SubjectTypeId;
+            string grantSubjectId = permissionRequest.SubjectId;
+            Guid? grantTargetDeviceId = permissionRequest.TargetDeviceId;
+
+            if (!string.IsNullOrWhiteSpace(request.SubjectTypeOverride)
+                && !request.SubjectTypeOverride.Equals("Employee", StringComparison.OrdinalIgnoreCase))
+            {
+                var subjectResolution = await _permissionGrantService.ResolveSubjectAsync(
+                    organizationId, request.SubjectTypeOverride, request.SubjectIdOverride, cancellationToken);
+
+                if (!subjectResolution.Success)
+                {
+                    return ApiResponse<PermissionRequestDto>.FailureResponse(subjectResolution.ErrorMessageEn!, subjectResolution.ErrorMessageAr!);
+                }
+
+                grantSubjectTypeId = subjectResolution.SubjectTypeId;
+                grantSubjectId = subjectResolution.SubjectId;
+                grantTargetDeviceId = subjectResolution.TargetDeviceId;
+            }
+
             // Shared with the admin direct-grant path (PermissionGrantService.BuildGrantAsync) so both ways of
             // creating a PermissionGrant enforce identical validation and can never drift apart.
             var buildResult = await _permissionGrantService.BuildGrantAsync(
                 organizationId,
                 permissionRequest.ActionKey,
                 permissionRequest.RequestedDecisionId,
-                permissionRequest.SubjectTypeId,
-                permissionRequest.SubjectId,
-                permissionRequest.TargetDeviceId,
+                grantSubjectTypeId,
+                grantSubjectId,
+                grantTargetDeviceId,
                 grantTypeName,
                 request.StartsAtUtc ?? permissionRequest.RequestedStartsAtUtc,
                 request.ExpiresAtUtc ?? permissionRequest.RequestedExpiresAtUtc,

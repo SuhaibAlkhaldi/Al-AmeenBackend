@@ -344,21 +344,37 @@ namespace DLPManagementSystem.Service.Service
             CreatePermissionGrantDto request,
             CancellationToken cancellationToken = default)
         {
-            if (!Guid.TryParse(request.SubjectId, out var employeeId))
+            var subjectTypeName = string.IsNullOrWhiteSpace(request.SubjectType) ? "Employee" : request.SubjectType;
+            var subjectResolution = await ResolveSubjectAsync(organizationId, subjectTypeName, request.SubjectId, cancellationToken);
+
+            if (!subjectResolution.Success)
             {
-                return ApiResponse<PermissionGrantDto>.FailureResponse("Employee id is not valid.", "معرّف الموظف غير صالح");
+                return ApiResponse<PermissionGrantDto>.FailureResponse(subjectResolution.ErrorMessageEn!, subjectResolution.ErrorMessageAr!);
             }
 
-            var employee = await _db.Employees
-                .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == employeeId, cancellationToken);
-
-            if (employee == null)
-            {
-                return ApiResponse<PermissionGrantDto>.FailureResponse("Employee was not found.", "الموظف غير موجود");
-            }
+            var subjectId = subjectResolution.SubjectId;
+            var grantTargetDisplayName = subjectResolution.DisplayName;
+            Guid? employeeIdForNameLookup = subjectTypeName.Equals("Employee", StringComparison.OrdinalIgnoreCase)
+                ? Guid.Parse(subjectId)
+                : null;
 
             var actionExists = await _db.PermissionActions
                 .AnyAsync(x => x.Key == request.ActionKey && x.IsEnabled, cancellationToken);
+
+            if (!actionExists && request.ActionKey.StartsWith(PermissionActionKeys.ExtensionActionKeyPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var extensionId = request.ActionKey[PermissionActionKeys.ExtensionActionKeyPrefix.Length..];
+
+                if (!ExtensionActionProvisioner.IsValidExtensionId(extensionId))
+                {
+                    return ApiResponse<PermissionGrantDto>.FailureResponse(
+                        "Extension id must be exactly 32 lowercase letters (a-p), matching the Chrome/Edge Web Store id format.",
+                        "معرّف الإضافة يجب أن يكون 32 حرفًا صغيرًا (a-p) بالضبط، بنفس صيغة متجر Chrome/Edge");
+                }
+
+                await ExtensionActionProvisioner.EnsureActionExistsAsync(_db, extensionId, cancellationToken);
+                actionExists = true;
+            }
 
             if (!actionExists)
             {
@@ -384,8 +400,6 @@ namespace DLPManagementSystem.Service.Service
                 }
             }
 
-            var subjectId = employee.Id.ToString();
-
             // Duplicate-active-grant check now lives inside BuildGrantAsync itself, so it applies here
             // automatically without a separate check.
             int decisionId;
@@ -394,7 +408,7 @@ namespace DLPManagementSystem.Service.Service
             try
             {
                 decisionId = await _lookupService.GetPermissionDecisionId("Allow", cancellationToken);
-                subjectTypeId = await _lookupService.GetPermissionSubjectTypeId("Employee", cancellationToken);
+                subjectTypeId = subjectResolution.SubjectTypeId;
             }
             catch (InvalidOperationException)
             {
@@ -407,7 +421,7 @@ namespace DLPManagementSystem.Service.Service
                 decisionId,
                 subjectTypeId,
                 subjectId,
-                targetDeviceId: null,
+                targetDeviceId: subjectResolution.TargetDeviceId,
                 request.GrantType,
                 request.StartsAtUtc,
                 request.ExpiresAtUtc,
@@ -434,7 +448,7 @@ namespace DLPManagementSystem.Service.Service
                 cancellationToken);
 
             await _adminAuditLogService.LogAsync(
-                organizationId, grantedByUserId, "GrantCreated", "PermissionGrant", grant.Id, employee.DisplayName,
+                organizationId, grantedByUserId, "GrantCreated", "PermissionGrant", grant.Id, grantTargetDisplayName,
                 $"Action '{grant.ActionKey}', grant type '{request.GrantType}'.", cancellationToken);
 
             try
@@ -473,10 +487,104 @@ namespace DLPManagementSystem.Service.Service
                 .Include(x => x.TargetDevice)
                 .FirstAsync(x => x.Id == grant.Id, cancellationToken);
 
-            var employeeNames = new Dictionary<Guid, string> { [employee.Id] = employee.DisplayName };
+            var employeeNames = employeeIdForNameLookup == null
+                ? new Dictionary<Guid, string>()
+                : new Dictionary<Guid, string> { [employeeIdForNameLookup.Value] = grantTargetDisplayName };
             var dto = MapToDto(savedGrant, DateTimeOffset.UtcNow, employeeNames);
 
             return ApiResponse<PermissionGrantDto>.SuccessResponse(dto, "Permission granted successfully.", "تم منح الصلاحية بنجاح");
+        }
+
+        public async Task<GrantSubjectResolution> ResolveSubjectAsync(
+            Guid organizationId,
+            string subjectTypeName,
+            string? subjectId,
+            CancellationToken cancellationToken = default)
+        {
+            switch (subjectTypeName)
+            {
+                case "Employee":
+                {
+                    if (!Guid.TryParse(subjectId, out var employeeId))
+                    {
+                        return GrantSubjectResolution.Failure("Employee id is not valid.", "معرّف الموظف غير صالح");
+                    }
+
+                    var employee = await _db.Employees
+                        .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == employeeId, cancellationToken);
+
+                    if (employee == null)
+                    {
+                        return GrantSubjectResolution.Failure("Employee was not found.", "الموظف غير موجود");
+                    }
+
+                    int employeeSubjectTypeId;
+                    try
+                    {
+                        employeeSubjectTypeId = await _lookupService.GetPermissionSubjectTypeId("Employee", cancellationToken);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        return GrantSubjectResolution.Failure("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
+                    }
+
+                    return GrantSubjectResolution.Ok(employeeSubjectTypeId, employee.Id.ToString(), targetDeviceId: null, employee.DisplayName);
+                }
+
+                case "Device":
+                {
+                    if (!Guid.TryParse(subjectId, out var deviceId))
+                    {
+                        return GrantSubjectResolution.Failure("Device id is not valid.", "معرّف الجهاز غير صالح");
+                    }
+
+                    var device = await _db.Devices
+                        .FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == deviceId, cancellationToken);
+
+                    if (device == null)
+                    {
+                        return GrantSubjectResolution.Failure("Device was not found.", "الجهاز غير موجود");
+                    }
+
+                    int deviceSubjectTypeId;
+                    try
+                    {
+                        deviceSubjectTypeId = await _lookupService.GetPermissionSubjectTypeId("Device", cancellationToken);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        return GrantSubjectResolution.Failure("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
+                    }
+
+                    // TargetDeviceId is set in addition to SubjectId=device.Id (redundant by itself) so
+                    // the existing TargetDevice Include()/MapToDto already resolves a display name for
+                    // free, the same way an Employee-subject grant scoped to one device does.
+                    return GrantSubjectResolution.Ok(deviceSubjectTypeId, device.Id.ToString(), device.Id, device.MachineName);
+                }
+
+                case "Organization":
+                {
+                    // No separate subject row to validate - the grant applies to every device in the
+                    // calling organization. Uses the organization id itself as the subject id, the same
+                    // sentinel-style convention AgentPolicyService.BuildGrantsForDeviceAsync matches on.
+                    int organizationSubjectTypeId;
+                    try
+                    {
+                        organizationSubjectTypeId = await _lookupService.GetPermissionSubjectTypeId("Organization", cancellationToken);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        return GrantSubjectResolution.Failure("Required reference data was not found.", "بيانات مرجعية مطلوبة غير موجودة");
+                    }
+
+                    return GrantSubjectResolution.Ok(organizationSubjectTypeId, organizationId.ToString(), targetDeviceId: null, "Organization");
+                }
+
+                default:
+                    return GrantSubjectResolution.Failure(
+                        "SubjectType must be Employee, Device, or Organization.",
+                        "يجب أن يكون نوع الموضوع Employee أو Device أو Organization");
+            }
         }
 
         private async Task<string?> ResolveSubjectDisplayNameAsync(Guid organizationId, string subjectId, CancellationToken cancellationToken)

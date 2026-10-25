@@ -53,4 +53,18 @@ public static class PermissionActionKeys
     // (RapidFilePropagation, its own background worker) of the "File Tracking" plan. Neither is a
     // real grantable Allow/Deny action.
     public const string FileInventoryMonitor = "file.inventory-monitor";
+
+    // Fixed, pre-seeded bypass action (NOT one of the dynamic "extension.<id>" keys - see
+    // PermissionGrantService's extension get-or-create logic for those). An effective Allow for this
+    // key on a given Employee/Device/Organization means BrowserPolicyManager (agent side) skips
+    // ExtensionInstallBlocklist="*" for that subject entirely, regardless of the raw
+    // BrowserPolicy.BlockUnapprovedExtensions flag - the same "unrestricted" concept as any other
+    // fixed grantable action, just scoped to browser extensions.
+    public const string ExtensionUnrestricted = "extension.unrestricted";
+
+    // Prefix shared by every dynamic "approve this specific extension ID" action key. Note
+    // ExtensionUnrestricted above also starts with this same prefix despite being a different, fixed
+    // concept - CompanyDlp.Core.PermissionEvaluator.EvaluateAllowedKeysByPrefix (agent side) must
+    // explicitly exclude it when enumerating approved extension IDs.
+    public const string ExtensionActionKeyPrefix = "extension.";
 }

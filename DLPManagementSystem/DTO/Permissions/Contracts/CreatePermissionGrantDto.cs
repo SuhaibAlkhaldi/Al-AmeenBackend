@@ -4,8 +4,13 @@ namespace DLPManagementSystem.DTO.Permissions.Contracts
 {
     public sealed class CreatePermissionGrantDto
     {
-        [Required]
-        public string SubjectId { get; set; } = string.Empty;
+        // "Employee" (default, back-compat), "Device", or "Organization". Employee/Device require
+        // SubjectId; Organization needs none (the grant applies to the whole calling organization) -
+        // see PermissionGrantService.CreateDirectGrantAsync for the validation branch per type.
+        [StringLength(50)]
+        public string SubjectType { get; set; } = "Employee";
+
+        public string? SubjectId { get; set; }
 
         [Required]
         [StringLength(100)]

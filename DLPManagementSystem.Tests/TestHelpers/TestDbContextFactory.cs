@@ -73,6 +73,14 @@ namespace DLPManagementSystem.Tests.TestHelpers
 
             db.PermissionActionCategories.Add(new PermissionActionCategory { Id = 4, Name = "Usb", DisplayName = "USB" });
             db.PermissionActionCategories.Add(new PermissionActionCategory { Id = 3, Name = "Screen", DisplayName = "Screen" });
+            db.PermissionActionCategories.Add(new PermissionActionCategory { Id = 9, Name = "Extensions", DisplayName = "Browser Extensions" });
+
+            db.PermissionRequestStatuses.Add(new PermissionRequestStatus { Id = 2, Name = "Submitted", DisplayName = "Submitted" });
+            db.PermissionRequestStatuses.Add(new PermissionRequestStatus { Id = 4, Name = "Approved", DisplayName = "Approved" });
+            db.PermissionRequestStatuses.Add(new PermissionRequestStatus { Id = 5, Name = "Rejected", DisplayName = "Rejected" });
+
+            db.PermissionRequestReviewDecisions.Add(new PermissionRequestReviewDecision { Id = 1, Name = "Approved", DisplayName = "Approved" });
+            db.PermissionRequestReviewDecisions.Add(new PermissionRequestReviewDecision { Id = 2, Name = "Rejected", DisplayName = "Rejected" });
 
             db.PermissionActions.Add(new PermissionAction
             {

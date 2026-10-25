@@ -22,6 +22,29 @@ namespace DLPManagementSystem.Service.Interface
             new() { ErrorMessageEn = messageEn, ErrorMessageAr = messageAr };
     }
 
+    /// <summary>
+    /// Result of resolving a grant's subject (Employee/Device/Organization) from a caller-supplied
+    /// SubjectType + SubjectId, shared by the admin direct-grant path and the request-approval path's
+    /// "approve with a different scope" override, so both validate/resolve identically.
+    /// </summary>
+    public sealed class GrantSubjectResolution
+    {
+        public int SubjectTypeId { get; init; }
+        public string SubjectId { get; init; } = string.Empty;
+        public Guid? TargetDeviceId { get; init; }
+        public string DisplayName { get; init; } = string.Empty;
+        public string? ErrorMessageEn { get; init; }
+        public string? ErrorMessageAr { get; init; }
+
+        public bool Success => ErrorMessageEn == null;
+
+        public static GrantSubjectResolution Ok(int subjectTypeId, string subjectId, Guid? targetDeviceId, string displayName) =>
+            new() { SubjectTypeId = subjectTypeId, SubjectId = subjectId, TargetDeviceId = targetDeviceId, DisplayName = displayName };
+
+        public static GrantSubjectResolution Failure(string messageEn, string messageAr) =>
+            new() { ErrorMessageEn = messageEn, ErrorMessageAr = messageAr };
+    }
+
     public interface IPermissionGrantService
     {
         Task<ApiResponse<PagedResultDto<PermissionGrantDto>>> GetGrantsAsync(
@@ -74,6 +97,17 @@ namespace DLPManagementSystem.Service.Interface
             Guid organizationId,
             Guid grantedByUserId,
             CreatePermissionGrantDto request,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Validates subjectTypeName ("Employee"/"Device"/"Organization") + subjectId and resolves the
+        /// concrete SubjectTypeId/SubjectId/TargetDeviceId/display-name a grant for it needs. Shared by
+        /// CreateDirectGrantAsync and PermissionRequestService.ApproveAsync's scope-override path.
+        /// </summary>
+        Task<GrantSubjectResolution> ResolveSubjectAsync(
+            Guid organizationId,
+            string subjectTypeName,
+            string? subjectId,
             CancellationToken cancellationToken = default);
     }
 }
