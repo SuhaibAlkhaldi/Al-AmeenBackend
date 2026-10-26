@@ -46,7 +46,14 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public AgentCliPolicyDto Cli { get; set; } = new();
         public AgentFileProtectionPolicyDto FileProtection { get; set; } = new();
         public AgentPrintPolicyDto Print { get; set; } = new();
+        public AgentFileOpenProtectionPolicyDto FileOpenProtection { get; set; } = new();
+        public AgentDesktopAppProvenancePolicyDto DesktopAppProvenance { get; set; } = new();
+        public AgentWhatsAppDesktopObservationPolicyDto WhatsAppDesktopObservation { get; set; } = new();
+        public AgentTeamsDesktopObservationPolicyDto TeamsDesktopObservation { get; set; } = new();
+        public AgentOutlookGraphObservationPolicyDto OutlookGraphObservation { get; set; } = new();
         public AgentFileClassificationPolicyDto FileClassification { get; set; } = new();
+        public AgentFileInventorySyncPolicyDto FileInventorySync { get; set; } = new();
+        public AgentFileTransferObservationPolicyDto FileTransferObservation { get; set; } = new();
         public AgentBackendPolicyDto Backend { get; set; } = new();
         public AgentPermissionPolicyDto Permissions { get; set; } = new();
 
@@ -223,6 +230,61 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public string EnforcementMode { get; set; } = "AuditOnly";
     }
 
+    // Mirrors CompanyDlp.Contracts.FileOpenProtectionPolicy field-for-field. Agent-local-only, see
+    // above - added to CompanyDlp.Contracts.DlpPolicy by the File Tracking feature (FileTracking
+    // branch) without ever being mirrored here. Same bug class as the FilenameTaggingEnabled/
+    // ContentWatermarkingEnabled and BuildCommit/BuildTimestampUtc incidents documented below:
+    // a section missing here entirely means the agent deserializes a policy without it, but its own
+    // DlpPolicy still declares (and re-serializes) it with default values - byte mismatch,
+    // InvalidPolicySignature on every device, unconditionally. Confirmed 2026-10-25.
+    public class AgentFileOpenProtectionPolicyDto
+    {
+        public bool Enabled { get; set; } = true;
+        public string EnforcementMode { get; set; } = "AuditOnly";
+        public int UsbSnapshotRetentionMinutes { get; set; } = 10;
+        public int UsbSnapshotMaxFiles { get; set; } = 5000;
+        public long UsbSnapshotMaxTotalBytes { get; set; } = 2L * 1024 * 1024 * 1024;
+        public int NewFileProvenanceBufferSeconds { get; set; } = 3;
+    }
+
+    // Mirrors CompanyDlp.Contracts.DesktopAppProvenancePolicy field-for-field. Same missing-section
+    // bug as AgentFileOpenProtectionPolicyDto above - see that type's comment.
+    public class AgentDesktopAppProvenancePolicyDto
+    {
+        public bool Enabled { get; set; }
+        public int CorrelationWindowSeconds { get; set; } = 20;
+        public int NetworkActivityCacheMaxTrackedProcesses { get; set; } = 2000;
+        public List<string> ExcludedProcessNames { get; set; } = new()
+        {
+            "chrome", "msedge", "firefox", "brave", "opera", "opera_gx", "iexplore",
+            "CompanyDlp.Service", "CompanyDlp.Desktop", "CompanyDlp.NativeHost"
+        };
+    }
+
+    // Mirrors CompanyDlp.Contracts.WhatsAppDesktopObservationPolicy field-for-field. Same missing-
+    // section bug as AgentFileOpenProtectionPolicyDto above - see that type's comment.
+    public class AgentWhatsAppDesktopObservationPolicyDto
+    {
+        public bool Enabled { get; set; }
+    }
+
+    // Mirrors CompanyDlp.Contracts.TeamsDesktopObservationPolicy field-for-field. Same missing-
+    // section bug as AgentFileOpenProtectionPolicyDto above - see that type's comment.
+    public class AgentTeamsDesktopObservationPolicyDto
+    {
+        public bool Enabled { get; set; }
+    }
+
+    // Mirrors CompanyDlp.Contracts.OutlookGraphObservationPolicy field-for-field. Same missing-
+    // section bug as AgentFileOpenProtectionPolicyDto above - see that type's comment.
+    public class AgentOutlookGraphObservationPolicyDto
+    {
+        public bool Enabled { get; set; }
+        public string ClientId { get; set; } = "";
+        public string TenantId { get; set; } = "common";
+        public int PollSeconds { get; set; } = 30;
+    }
+
     // Mirrors CompanyDlp.Contracts.FileClassificationPolicy field-for-field. Agent-local-only, see
     // above - this is a different, unrelated FileClassificationApi (the AI classification service),
     // not to be confused with the backend's own FileClassificationApiOptions.
@@ -259,6 +321,28 @@ namespace DLPManagementSystem.DTO.AgentPolicy
         public bool FilenameTaggingEnabled { get; set; }
         public bool ContentWatermarkingEnabled { get; set; }
         public string PortalBaseUrl { get; set; } = "";
+    }
+
+    // Mirrors CompanyDlp.Contracts.FileInventorySyncPolicy field-for-field. Same missing-section
+    // bug as AgentFileOpenProtectionPolicyDto above - see that type's comment.
+    public class AgentFileInventorySyncPolicyDto
+    {
+        public bool Enabled { get; set; } = true;
+        public int BatchSize { get; set; } = 200;
+        public int IncrementalSyncSeconds { get; set; } = 15;
+        public int ReconciliationScanIntervalMinutes { get; set; } = 60;
+        public string BackendPath { get; set; } = "api/v1/agent/file-inventory/batch";
+        public int TimeoutSeconds { get; set; } = 30;
+    }
+
+    // Mirrors CompanyDlp.Contracts.FileTransferObservationPolicy field-for-field. Same missing-
+    // section bug as AgentFileOpenProtectionPolicyDto above - see that type's comment.
+    public class AgentFileTransferObservationPolicyDto
+    {
+        public bool Enabled { get; set; }
+        public int BatchSize { get; set; } = 200;
+        public string BackendPath { get; set; } = "api/v1/agent/file-transfer-events/batch";
+        public int TimeoutSeconds { get; set; } = 30;
     }
 
     // Mirrors CompanyDlp.Contracts.BackendPolicy field-for-field. Unlike the sections above, this
