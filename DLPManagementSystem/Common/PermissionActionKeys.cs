@@ -36,6 +36,17 @@ public static class PermissionActionKeys
     // no separate wildcard value needed.
     public const string FileOpenAccess = "file.open-access";
 
+    // Mirrors CompanyDlp.Contracts.ActionKeys.FilenameTagging on the agent side. An effective
+    // Allow means FileInventoryScanner renames a classified file to add its tier prefix (e.g.
+    // "[Secret] report.pdf") to the filename - see FilenameClassificationTagger. Replaces the old
+    // local-only FileClassificationPolicy.FilenameTaggingEnabled flag, which PolicyStore's
+    // PreserveLocalOnlySections discarded from every sync. Uses the default "this tier and
+    // anything less sensitive" widening (not in PermissionEvaluator.ActionsRequiringExactTierMatch)
+    // since this is a cosmetic/informational marker, not a strict per-tier gate like
+    // FileWatermarkDisable/FileOpenAccess above - in practice this is almost always granted as a
+    // blanket Organization-wide Allow with no ClassificationTier set at all.
+    public const string FileFilenameTagging = "file.filename-tagging";
+
     // Mirrors CompanyDlp.Contracts.ActionKeys.CliSensitiveCommand on the agent side. Every event
     // reported under this key already represents a detected match - see AgentAuditEventService's
     // independent (regardless-of-Decision) alert branch for this key.
