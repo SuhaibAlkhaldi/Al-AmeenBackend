@@ -113,9 +113,16 @@ namespace DLPManagementSystem.Service.Service
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
+                // Org-scoped BEFORE grouping/First() - the uniqueness index on EmployeeWindowsIdentities is
+                // (OrganizationId, UserSid), not UserSid alone, so the exact same SID string can legitimately
+                // be active in two different organizations at once. Without this filter, GroupBy(UserSid)
+                // could non-deterministically resolve to a DIFFERENT organization's employee, and that
+                // EmployeeId would then be written onto this organization's own AuditEvent - a cross-tenant
+                // leak the moment anything joins AuditEvent.Employee to display a name (AuditEventService,
+                // AlertService, exports).
                 var employeeBySid = await _db.EmployeeWindowsIdentities
                     .AsNoTracking()
-                    .Where(x => userSids.Contains(x.UserSid) && x.RevokedAtUtc == null)
+                    .Where(x => x.OrganizationId == organizationId && userSids.Contains(x.UserSid) && x.RevokedAtUtc == null)
                     .GroupBy(x => x.UserSid)
                     .Select(g => new { UserSid = g.Key, EmployeeId = g.First().EmployeeId })
                     .ToDictionaryAsync(x => x.UserSid, x => x.EmployeeId, StringComparer.OrdinalIgnoreCase, cancellationToken);
