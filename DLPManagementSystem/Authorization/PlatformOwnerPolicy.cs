@@ -14,5 +14,14 @@ namespace DLPManagementSystem.Authorization
         // log in as. It must only count as the platform owner while running in Development - see
         // PlatformOwnerAuthorizationHandler - so a non-dev environment can never be satisfied by it.
         public const string DevOrganizationCode = "DEV";
+
+        // The single decision both PlatformOwnerAuthorizationHandler (API enforcement) and
+        // AuthService (the IsPlatformOwner flag surfaced to the frontend for UI gating) call, so the
+        // two can never drift apart.
+        public static bool IsOwnerOrganizationCode(string? organizationCode, bool isDevelopmentEnvironment)
+        {
+            return organizationCode == OwnerOrganizationCode
+                || (isDevelopmentEnvironment && organizationCode == DevOrganizationCode);
+        }
     }
 }

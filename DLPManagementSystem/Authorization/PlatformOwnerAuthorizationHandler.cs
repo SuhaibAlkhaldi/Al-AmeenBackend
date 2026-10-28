@@ -44,8 +44,7 @@ namespace DLPManagementSystem.Authorization
                 return;
             }
 
-            var isPlatformOwner = organizationCode == PlatformOwnerPolicy.OwnerOrganizationCode
-                || (_environment.IsDevelopment() && organizationCode == PlatformOwnerPolicy.DevOrganizationCode);
+            var isPlatformOwner = PlatformOwnerPolicy.IsOwnerOrganizationCode(organizationCode, _environment.IsDevelopment());
 
             if (isPlatformOwner)
             {

@@ -1,11 +1,13 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using DLPManagementSystem.Authorization;
 using DLPManagementSystem.Common;
 using DLPManagementSystem.DTO.Auth;
 using DLPManagementSystem.Models;
 using DLPManagementSystem.Service.Interface;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 
 namespace DLPManagementSystem.Service.Service
@@ -19,17 +21,20 @@ namespace DLPManagementSystem.Service.Service
         private readonly IConfiguration _configuration;
         private readonly IPasswordService _passwordService;
         private readonly IAdminAuditLogService _adminAuditLogService;
+        private readonly IHostEnvironment _environment;
 
         public AuthService(
             DLPSystemContext db,
             IConfiguration configuration,
             IPasswordService passwordService,
-            IAdminAuditLogService adminAuditLogService)
+            IAdminAuditLogService adminAuditLogService,
+            IHostEnvironment environment)
         {
             _db = db;
             _configuration = configuration;
             _passwordService = passwordService;
             _adminAuditLogService = adminAuditLogService;
+            _environment = environment;
         }
 
         public async Task<ApiResponse<LoginResponseDto>> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
@@ -37,6 +42,7 @@ namespace DLPManagementSystem.Service.Service
             var user = await _db.Users
                 .Include(x => x.Role)
                 .Include(x => x.Status)
+                .Include(x => x.Organization)
                 .FirstOrDefaultAsync(x => x.Email == request.Email, cancellationToken);
 
             if (user == null)
@@ -123,6 +129,7 @@ namespace DLPManagementSystem.Service.Service
         {
             var user = await _db.Users
                 .Include(x => x.Role)
+                .Include(x => x.Organization)
                 .FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
 
             if (user == null)
@@ -168,7 +175,7 @@ namespace DLPManagementSystem.Service.Service
             return ApiResponse<bool>.SuccessResponse(true, "Password changed successfully.", "تم تغيير كلمة المرور بنجاح");
         }
 
-        private static AuthUserDto MapToAuthUserDto(User user)
+        private AuthUserDto MapToAuthUserDto(User user)
         {
             return new AuthUserDto
             {
@@ -179,7 +186,8 @@ namespace DLPManagementSystem.Service.Service
                 RoleName = user.Role.Name,
                 OrganizationId = user.OrganizationId,
                 UserTypeId = user.UserTypeId,
-                MustChangePassword = user.MustChangePassword
+                MustChangePassword = user.MustChangePassword,
+                IsPlatformOwner = PlatformOwnerPolicy.IsOwnerOrganizationCode(user.Organization.Code, _environment.IsDevelopment())
             };
         }
 
