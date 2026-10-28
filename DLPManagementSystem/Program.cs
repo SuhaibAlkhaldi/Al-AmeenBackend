@@ -29,6 +29,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -242,7 +243,15 @@ builder.Services
     .AddScheme<AuthenticationSchemeOptions, DeviceBearerAuthenticationHandler>(
         DeviceBearerDefaults.SchemeName, null);
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Not organization-membership-based like the role claim - this is the "are you Al-Ameen itself"
+    // check used by platform-owner-only endpoints (e.g. DemoRequestsController). See
+    // PlatformOwnerAuthorizationHandler / PlatformOwnerPolicy.
+    options.AddPolicy(PlatformOwnerPolicy.Name, policy =>
+        policy.Requirements.Add(new PlatformOwnerRequirement()));
+});
+builder.Services.AddScoped<IAuthorizationHandler, PlatformOwnerAuthorizationHandler>();
 
 builder.Services.Configure<DlpDashboardOptions>(
     builder.Configuration.GetSection("DlpDashboard"));
