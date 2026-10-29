@@ -33,6 +33,13 @@ using Microsoft.AspNetCore.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Transparently decrypt ConnectionStrings:DefaultConnection if stored in encrypted format
+var rawDefaultConnection = builder.Configuration.GetConnectionString("DefaultConnection");
+if (!string.IsNullOrWhiteSpace(rawDefaultConnection))
+{
+    builder.Configuration["ConnectionStrings:DefaultConnection"] = ConnectionStringProtector.Decrypt(rawDefaultConnection);
+}
+
 // Add services to the container.
 
 builder.Services.AddScoped<MustChangePasswordFilter>();
@@ -193,7 +200,7 @@ builder.Services.AddDataProtection()
 
 builder.Services.AddDbContext<DLPSystemContext>(options =>
 {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    options.UseSqlServer(ConnectionStringProtector.Decrypt(builder.Configuration.GetConnectionString("DefaultConnection")));
 });
 
 var jwtSection = builder.Configuration.GetSection("Jwt");

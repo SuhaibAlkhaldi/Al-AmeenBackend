@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 using System.Linq;
+using DLPManagementSystem.Common;
 
 namespace DLPManagementSystem.CompanyDlpDashboard;
 
@@ -21,7 +22,7 @@ public sealed class SqlDlpDashboardQueryService : IDlpDashboardQueryService
             ? "DefaultConnection"
             : _options.ConnectionStringName;
 
-        _connectionString = configuration.GetConnectionString(connectionStringName)
+        _connectionString = ConnectionStringProtector.Decrypt(configuration.GetConnectionString(connectionStringName))
             ?? throw new InvalidOperationException($"Connection string '{connectionStringName}' was not found.");
     }
 
