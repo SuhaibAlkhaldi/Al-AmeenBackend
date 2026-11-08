@@ -38,6 +38,7 @@ namespace DLPManagementSystem.Data.Seed
             await SeedAgentCommandStatusesAsync(cancellationToken);
             await SeedAlertLookupsAsync(cancellationToken);
             await SeedDemoRequestStatusesAsync(cancellationToken);
+            await SeedHeldEmailMessageStatusesAsync(cancellationToken);
 
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -192,6 +193,7 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionCategoryIfMissing(7, "System", "System", ct);
             await AddPermissionActionCategoryIfMissing(8, "Cli", "Command Line", ct);
             await AddPermissionActionCategoryIfMissing(9, "Extensions", "Browser Extensions", ct);
+            await AddPermissionActionCategoryIfMissing(10, "Email", "Email", ct);
         }
 
         private async Task AddPermissionDecisionIfMissing(int id, string name, string displayName, CancellationToken ct)
@@ -279,6 +281,8 @@ namespace DLPManagementSystem.Data.Seed
             await AddPermissionActionIfMissing(PermissionActionKeys.FileWatermarkDisable, "File", "Hide File Watermark", "Allows the tiled watermark stamped into a file's own content to be hidden, without affecting the small classification/device corner marker.", "Deny", 136, ct, isSensitive: true);
             await AddPermissionActionIfMissing(PermissionActionKeys.FileOpenAccess, "File", "File Open Access", "Allows opening a file the employee did not create locally themselves (received via browser download or USB copy) - denied by default at every classification tier, including Public.", "Deny", 137, ct, isSensitive: true);
             await AddPermissionActionIfMissing(PermissionActionKeys.FileFilenameTagging, "File", "Filename Classification Tagging", "Allows the agent to rename a classified file to add its tier prefix (e.g. \"[Secret] report.pdf\") to the filename.", "Deny", 138, ct);
+
+            await AddPermissionActionIfMissing(PermissionActionKeys.EmailSendWithoutApproval, "Email", "Send Email Without Approval", "Allows an employee to send email at this tier or any less sensitive tier without an admin approval request ever being created.", "Deny", 139, ct);
 
             await AddPermissionActionIfMissing("software.install", "Software", "Software Install", "Block or allow software installation.", "Deny", 140, ct);
             await AddPermissionActionIfMissing("software.execute-unapproved", "Software", "Execute Unapproved Software", "Block or allow unapproved software execution.", "Deny", 150, ct);
@@ -437,6 +441,28 @@ namespace DLPManagementSystem.Data.Seed
             if (!exists)
             {
                 _db.PermissionRequestReviewDecisions.Add(new PermissionRequestReviewDecision
+                {
+                    Id = id,
+                    Name = name,
+                    DisplayName = displayName
+                });
+            }
+        }
+
+        private async Task SeedHeldEmailMessageStatusesAsync(CancellationToken ct)
+        {
+            await AddHeldEmailMessageStatusIfMissing(1, "Held", "Held", ct);
+            await AddHeldEmailMessageStatusIfMissing(2, "Approved", "Approved", ct);
+            await AddHeldEmailMessageStatusIfMissing(3, "Rejected", "Rejected", ct);
+        }
+
+        private async Task AddHeldEmailMessageStatusIfMissing(int id, string name, string displayName, CancellationToken ct)
+        {
+            var exists = await _db.HeldEmailMessageStatuses.AnyAsync(x => x.Name == name, ct);
+
+            if (!exists)
+            {
+                _db.HeldEmailMessageStatuses.Add(new HeldEmailMessageStatus
                 {
                     Id = id,
                     Name = name,

@@ -31,7 +31,11 @@ namespace DLPManagementSystem.Service.Service
         // actually been sent. That is strictly stronger evidence than "the send button was clicked" (every
         // other EMAIL-kind channel's EMAIL_IN_SEND_FORM), so it gets its own evidence type rather than reusing
         // that one, and it is the first channel that can see a Bcc recipient at all - hence "BCC" here.
-        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP", "YAHOO", "TELEGRAM", "WHATSAPP_DESKTOP", "TEAMS_DESKTOP", "OUTLOOK_GRAPH" };
+        // EMAIL_DLP_GATEWAY (Ameen.EmailDLP) never goes through IngestAsync - it writes FileTransferEvent
+        // rows directly via EmailAttachmentFileTransferWriter (no originating device, org-wide file
+        // correlation instead of this service's own device-scoped LoadCandidatesAsync). Listed here only
+        // for documentation/future-proofing, matching every other channel's own convention.
+        private static readonly HashSet<string> AllowedChannels = new(StringComparer.Ordinal) { "GMAIL", "OUTLOOK", "TEAMS", "WHATSAPP", "YAHOO", "TELEGRAM", "WHATSAPP_DESKTOP", "TEAMS_DESKTOP", "OUTLOOK_GRAPH", "EMAIL_DLP_GATEWAY" };
         private static readonly HashSet<string> AllowedRecipientKinds = new(StringComparer.Ordinal) { "EMAIL", "CHAT_NAME", "GROUP_NAME", "UNKNOWN" };
         private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal) { "TO", "CC", "BCC" };
 

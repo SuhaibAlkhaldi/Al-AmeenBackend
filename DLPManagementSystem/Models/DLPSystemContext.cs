@@ -45,6 +45,16 @@ public partial class DLPSystemContext : DbContext
 
     public virtual DbSet<AuditEventType> AuditEventTypes { get; set; }
 
+    public virtual DbSet<EmailBlockedDomain> EmailBlockedDomains { get; set; }
+
+    public virtual DbSet<EmailEvent> EmailEvents { get; set; }
+
+    public virtual DbSet<EmailPolicySetting> EmailPolicySettings { get; set; }
+
+    public virtual DbSet<HeldEmailMessage> HeldEmailMessages { get; set; }
+
+    public virtual DbSet<HeldEmailMessageStatus> HeldEmailMessageStatuses { get; set; }
+
     public virtual DbSet<AuditReasonCode> AuditReasonCodes { get; set; }
 
     public virtual DbSet<DashboardEmployeeDailyRollup> DashboardEmployeeDailyRollups { get; set; }
@@ -1034,6 +1044,27 @@ public partial class DLPSystemContext : DbContext
         modelBuilder.Entity<UserType>(entity =>
         {
             entity.Property(e => e.Id).ValueGeneratedNever();
+        });
+
+        modelBuilder.Entity<HeldEmailMessageStatus>(entity =>
+        {
+            entity.Property(e => e.Id).ValueGeneratedNever();
+        });
+
+        modelBuilder.Entity<HeldEmailMessage>(entity =>
+        {
+            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.CreatedAtUtc).HasDefaultValueSql("(sysutcdatetime())");
+
+            entity.HasOne(d => d.Status).WithMany(p => p.HeldEmailMessages)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_HeldEmailMessages_Status");
+        });
+
+        modelBuilder.Entity<EmailEvent>(entity =>
+        {
+            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.OccurredAtUtc).HasDefaultValueSql("(sysutcdatetime())");
         });
 
         // Backs PolicyVersionService.BumpAsync's atomic "next policy version number" - see that file

@@ -47,6 +47,18 @@ public static class PermissionActionKeys
     // blanket Organization-wide Allow with no ClassificationTier set at all.
     public const string FileFilenameTagging = "file.filename-tagging";
 
+    // Email DLP plan's Phase 4: an effective Allow lets an email sender (matched by SubjectType
+    // Employee - SubjectId is the Employee's Id, resolved from the SMTP envelope's From address -
+    // or Organization for a blanket grant) send at this grant's ClassificationTier or any LESS
+    // sensitive tier without the Ameen.EmailDLP.Worker ever creating a HeldEmailMessage/request for
+    // the admin - same "this tier and anything less sensitive" widening as FileFilenameTagging
+    // above, evaluated by Ameen.EmailDLP.Infrastructure's own small server-side evaluator rather
+    // than the agent-side CompanyDlp.Core.PermissionEvaluator (that class runs against a synced
+    // device policy snapshot and has no server-side equivalent to call into for this). A fired
+    // bypass still writes an EmailEvent row (Outcome=BypassFired) - see HeldEmailMessageService's
+    // sibling EmailEventWriter.
+    public const string EmailSendWithoutApproval = "email.send-without-approval";
+
     // Mirrors CompanyDlp.Contracts.ActionKeys.CliSensitiveCommand on the agent side. Every event
     // reported under this key already represents a detected match - see AgentAuditEventService's
     // independent (regardless-of-Decision) alert branch for this key.

@@ -1355,6 +1355,114 @@ namespace DLPManagementSystem.Migrations
                     b.ToTable("DictionaryRules");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.EmailBlockedDomain", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Domain")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("OrganizationId", "Domain");
+
+                    b.ToTable("EmailBlockedDomains");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.EmailEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newsequentialid())");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ClassificationTier")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("FromAddress")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<Guid?>("HeldEmailMessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MessageId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("(sysutcdatetime())");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ToAddresses")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "OrganizationId", "OccurredAtUtc" }, "IX_EmailEvents_Organization_OccurredAt")
+                        .IsDescending(false, true);
+
+                    b.ToTable("EmailEvents");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.EmailPolicySetting", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ClassificationTier")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("OrganizationId", "ClassificationTier");
+
+                    b.ToTable("EmailPolicySettings");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.Employee", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1898,6 +2006,105 @@ namespace DLPManagementSystem.Migrations
                     b.HasIndex(new[] { "NewFileHash", "ObservedAtUtc" }, "IX_FileVersionHistory_NewHash_Observed");
 
                     b.ToTable("FileVersionHistories");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.HeldEmailMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newsequentialid())");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ClassificationTier")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("(sysutcdatetime())");
+
+                    b.Property<string>("FromAddress")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("MessageId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RawMimeContent")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("ReviewNotes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTimeOffset?>("ReviewedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ReviewedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("StatusId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ToAddresses")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StatusId");
+
+                    b.HasIndex(new[] { "OrganizationId", "StatusId", "CreatedAtUtc" }, "IX_HeldEmailMessages_Organization_Status");
+
+                    b.ToTable("HeldEmailMessages");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.HeldEmailMessageStatus", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "Name" }, "UQ_HeldEmailMessageStatuses_Name")
+                        .IsUnique();
+
+                    b.ToTable("HeldEmailMessageStatuses");
                 });
 
             modelBuilder.Entity("DLPManagementSystem.Models.ObservedFile", b =>
@@ -3766,6 +3973,17 @@ namespace DLPManagementSystem.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.HeldEmailMessage", b =>
+                {
+                    b.HasOne("DLPManagementSystem.Models.HeldEmailMessageStatus", "Status")
+                        .WithMany("HeldEmailMessages")
+                        .HasForeignKey("StatusId")
+                        .IsRequired()
+                        .HasConstraintName("FK_HeldEmailMessages_Status");
+
+                    b.Navigation("Status");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.ObservedFile", b =>
                 {
                     b.HasOne("DLPManagementSystem.Models.Device", "Device")
@@ -4387,6 +4605,11 @@ namespace DLPManagementSystem.Migrations
             modelBuilder.Entity("DLPManagementSystem.Models.FileType", b =>
                 {
                     b.Navigation("FileInventoryRecords");
+                });
+
+            modelBuilder.Entity("DLPManagementSystem.Models.HeldEmailMessageStatus", b =>
+                {
+                    b.Navigation("HeldEmailMessages");
                 });
 
             modelBuilder.Entity("DLPManagementSystem.Models.ObservedFile", b =>
