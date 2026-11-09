@@ -49,6 +49,8 @@ public partial class DLPSystemContext : DbContext
 
     public virtual DbSet<EmailEvent> EmailEvents { get; set; }
 
+    public virtual DbSet<EmailGatewaySetting> EmailGatewaySettings { get; set; }
+
     public virtual DbSet<EmailPolicySetting> EmailPolicySettings { get; set; }
 
     public virtual DbSet<HeldEmailMessage> HeldEmailMessages { get; set; }

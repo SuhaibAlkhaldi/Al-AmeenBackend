@@ -1441,6 +1441,23 @@ namespace DLPManagementSystem.Migrations
                     b.ToTable("EmailEvents");
                 });
 
+            modelBuilder.Entity("DLPManagementSystem.Models.EmailGatewaySetting", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AutoAllowInternalEmails")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("OrganizationId");
+
+                    b.ToTable("EmailGatewaySettings");
+                });
+
             modelBuilder.Entity("DLPManagementSystem.Models.EmailPolicySetting", b =>
                 {
                     b.Property<Guid>("OrganizationId")
